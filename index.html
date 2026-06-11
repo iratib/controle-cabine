@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contrôle Cabine – Connexion</title>
+  <link rel="icon" type="image/png" href="images/logo.png" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #0f0f0f;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'DM Sans', sans-serif;
+      color: #fff;
+      padding: 20px;
+    }
+
+    /* Subtle background texture */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 10%, rgba(227,24,55,0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 80% 90%, rgba(227,24,55,0.05) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    /* ── Login card ── */
+    .login-card {
+      width: 100%;
+      max-width: 420px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 40px 36px;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── Header ── */
+    .login-header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      text-align: center;
+    }
+
+    .login-logo-wrap {
+      width: 88px;
+      height: 88px;
+      background: #fff;
+      border-radius: 14px;
+      padding: 6px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .login-logo-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .login-logo-wrap .logo-fallback {
+      font-size: 44px;
+      line-height: 1;
+    }
+
+    .login-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.2;
+    }
+
+    .login-brand {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 28px;
+      font-weight: 800;
+      color: #e31837;
+      letter-spacing: 4px;
+      line-height: 1;
+    }
+
+    .login-desc {
+      font-size: 13px;
+      color: rgba(255,255,255,0.45);
+      font-weight: 400;
+    }
+
+    /* ── Separator ── */
+    .login-sep {
+      height: 1px;
+      background: rgba(255,255,255,0.08);
+      margin: 28px 0;
+    }
+
+    /* ── Labels ── */
+    .field-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.35);
+      margin-bottom: 10px;
+    }
+
+    /* ── Role dropdown ── */
+    .role-select-wrap {
+      position: relative;
+      margin-bottom: 22px;
+    }
+
+    .role-select {
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1.5px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 12px 40px 12px 14px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      color: #fff;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      transition: border-color 0.2s;
+    }
+
+    .role-select:focus {
+      border-color: #e31837;
+    }
+
+    .role-select option {
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 14px;
+    }
+
+    .role-select-arrow {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: rgba(255,255,255,0.35);
+      font-size: 12px;
+      pointer-events: none;
+    }
+
+    /* ── Email field (production only) ── */
+    .field-group {
+      margin-bottom: 16px;
+    }
+
+    .input-wrap {
+      position: relative;
+    }
+
+    .login-input {
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1.5px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      color: #fff;
+      outline: none;
+      transition: border-color 0.2s;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    .login-input::placeholder {
+      color: rgba(255,255,255,0.25);
+    }
+
+    .login-input:focus {
+      border-color: #e31837;
+    }
+
+    .login-input.has-toggle {
+      padding-right: 44px;
+    }
+
+    .pw-toggle {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.35);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px;
+      transition: color 0.2s;
+    }
+
+    .pw-toggle:hover { color: rgba(255,255,255,0.7); }
+
+    /* ── Password hint ── */
+    .pw-hint {
+      margin-top: 8px;
+      padding: 9px 12px;
+      background: rgba(227,24,55,0.1);
+      border: 1px solid rgba(227,24,55,0.25);
+      border-radius: 8px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.55);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .pw-hint i { color: #e31837; font-size: 11px; }
+
+    .pw-hint-val {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 600;
+      color: rgba(255,255,255,0.8);
+      letter-spacing: 1px;
+    }
+
+    /* ── Error msg ── */
+    .login-error {
+      display: none;
+      margin-top: 10px;
+      padding: 9px 12px;
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px;
+      font-size: 12.5px;
+      color: #fca5a5;
+    }
+
+    /* ── Connect button ── */
+    .login-btn {
+      width: 100%;
+      margin-top: 22px;
+      padding: 14px;
+      background: #e31837;
+      border: none;
+      border-radius: 12px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(227,24,55,0.45);
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .login-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 28px rgba(227,24,55,0.55);
+    }
+
+    .login-btn:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .login-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      20%,60%  { transform: translateX(-6px); }
+      40%,80%  { transform: translateX(6px); }
+    }
+
+    /* ── Footer ── */
+    .login-footer {
+      margin-top: 28px;
+      text-align: center;
+      font-size: 11.5px;
+      color: rgba(255,255,255,0.25);
+      font-weight: 400;
+    }
+
+    /* ── Toast ── */
+    .toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="login-card" id="loginCard">
+
+    <!-- Header -->
+    <div class="login-header">
+      <div class="login-logo-wrap">
+        <img src="images/logo.png" alt="RAM Handling"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='block';" />
+        <span class="logo-fallback" style="display:none;">✈</span>
+      </div>
+      <div>
+        <div class="login-title">Contrôle Cabine</div>
+        <div class="login-brand">RAMP</div>
+      </div>
+      <div class="login-desc">Agents au sol · Contrôle Cabine</div>
+    </div>
+
+    <div class="login-sep"></div>
+
+    <!-- Sélecteur de rôle -->
+    <div class="field-group">
+      <label class="field-label" for="role-select">Profil</label>
+      <div class="role-select-wrap">
+        <select id="role-select" class="role-select" onchange="selectLoginRole(this.value)">
+          <option value="agent">Agent Contrôle</option>
+          <option value="superviseur">Superviseur Cabine</option>
+          <option value="chef">Chef de Département</option>
+          <option value="admin">Administrateur</option>
+        </select>
+        <i class="fas fa-chevron-down role-select-arrow"></i>
+      </div>
+    </div>
+
+    <!-- Matricule -->
+    <div class="field-group" id="matriculeField" style="display:none;">
+      <label class="field-label" for="login-matricule">Matricule</label>
+      <div class="input-wrap">
+        <input type="text" id="login-matricule" class="login-input"
+               placeholder="ex : AG-001" autocomplete="username"
+               oninput="this.value = this.value.toUpperCase()"
+               onkeydown="if(event.key==='Enter') doLogin()" />
+      </div>
+    </div>
+
+    <!-- Mot de passe -->
+    <div class="field-group">
+      <label class="field-label" for="login-password">Mot de passe</label>
+      <div class="input-wrap">
+        <input type="password" id="login-password" class="login-input has-toggle"
+               placeholder="••••••••" autocomplete="current-password"
+               oninput="this.value = this.value.toUpperCase()"
+               onkeydown="if(event.key==='Enter') doLogin()" />
+        <button type="button" class="pw-toggle" onclick="togglePasswordVis()" aria-label="Afficher/masquer">
+          <i class="fas fa-eye" id="toggle-pw-icon"></i>
+        </button>
+      </div>
+      <!-- Hint démo -->
+      <div class="pw-hint" id="pw-hint">
+        <i class="fas fa-key"></i>
+        <span>Mot de passe : <span class="pw-hint-val" id="pw-hint-val">AGENT</span></span>
+      </div>
+      <div class="login-error" id="login-error">
+        <i class="fas fa-circle-exclamation"></i> Email ou mot de passe incorrect.
+      </div>
+    </div>
+
+    <!-- Bouton -->
+    <button class="login-btn" id="login-btn" onclick="doLogin()">
+      <span id="btn-text">Se connecter</span>
+      <div class="btn-spinner" id="btn-spinner"></div>
+    </button>
+
+    <!-- Footer -->
+    <div class="login-footer">ALBOUJRADA@ramhandling.com</div>
+
+  </div>
+
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script type="module">
+    import { login, redirectByRole } from './js/auth.js';
+    import { supabase, isDemoMode } from './js/supabase-client.js';
+
+    /* ── Mots de passe démo ── */
+    const PASSWORDS = { agent: 'AGENT', superviseur: 'SUP001', chef: 'CHEF2026', admin: 'ADMIN2024' };
+    const DEMO_CREDS = {
+      agent:       { email: 'agent@demo.com', password: 'demo123' },
+      superviseur: { email: 'agent@demo.com', password: 'demo123' },
+      chef:        { email: 'admin@demo.com', password: 'demo123' },
+      admin:       { email: 'admin@demo.com', password: 'demo123' }
+    };
+
+    let selectedLoginRole = 'agent';
+
+    window.selectLoginRole = function(role) {
+      selectedLoginRole = role;
+      if (isDemoMode) {
+        document.getElementById('pw-hint-val').textContent = PASSWORDS[role];
+      }
+    };
+
+    window.togglePasswordVis = function() {
+      const inp = document.getElementById('login-password');
+      const ico = document.getElementById('toggle-pw-icon');
+      inp.type = inp.type === 'password' ? 'text' : 'password';
+      ico.className = inp.type === 'password' ? 'fas fa-eye' : 'fas fa-eye-slash';
+    };
+
+    window.doLogin = async function() {
+      const pwInput = document.getElementById('login-password');
+      const pw = pwInput.value.trim().toUpperCase();
+      const btn = document.getElementById('login-btn');
+      const btnText = document.getElementById('btn-text');
+      const spinner = document.getElementById('btn-spinner');
+      const errorEl = document.getElementById('login-error');
+
+      errorEl.style.display = 'none';
+
+      function shake() {
+        const card = document.getElementById('loginCard');
+        card.style.animation = 'none';
+        card.offsetHeight;
+        card.style.animation = 'shake 0.4s ease';
+        pwInput.style.borderColor = '#ef4444';
+        setTimeout(() => { pwInput.style.borderColor = 'rgba(255,255,255,0.1)'; }, 1500);
+        setTimeout(() => { card.style.animation = ''; }, 500);
+      }
+
+      function setLoading(v) {
+        btn.disabled = v;
+        btnText.style.display = v ? 'none' : 'inline';
+        spinner.style.display = v ? 'block' : 'none';
+      }
+
+      if (isDemoMode) {
+        /* Mode démo : valider le mot de passe simplifié */
+        if (pw !== PASSWORDS[selectedLoginRole]) {
+          shake();
+          errorEl.textContent = 'Mot de passe incorrect.';
+          errorEl.style.display = 'block';
+          return;
+        }
+        setLoading(true);
+        try {
+          const creds = DEMO_CREDS[selectedLoginRole];
+          await login(creds.email, creds.password);
+          await redirectByRole();
+        } catch (err) {
+          shake();
+          errorEl.textContent = 'Erreur de connexion.';
+          errorEl.style.display = 'block';
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        /* Mode production : matricule + mot de passe */
+        const matricule = document.getElementById('login-matricule').value.trim();
+        if (!matricule) {
+          document.getElementById('login-matricule').style.borderColor = '#ef4444';
+          setTimeout(() => document.getElementById('login-matricule').style.borderColor = 'rgba(255,255,255,0.1)', 1500);
+          return;
+        }
+        setLoading(true);
+        try {
+          await login(matricule, pw);
+          await redirectByRole();
+        } catch (err) {
+          shake();
+          errorEl.textContent = 'Matricule ou mot de passe incorrect.';
+          errorEl.style.display = 'block';
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+
+    /* ── Init ── */
+    (async () => {
+      if (isDemoMode) {
+        /* Afficher le hint, masquer l'email */
+        document.getElementById('pw-hint').style.display = 'flex';
+        document.getElementById('emailField').style.display = 'none';
+      } else {
+        /* Production : afficher le matricule, masquer le hint */
+        document.getElementById('pw-hint').style.display = 'none';
+        document.getElementById('matriculeField').style.display = 'block';
+        /* Si déjà connecté, rediriger */
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) await redirectByRole();
+        } catch (_) {}
+      }
+      /* Sélectionner agent par défaut */
+      document.getElementById('role-select').value = 'agent';
+      selectLoginRole('agent');
+    })();
+  </script>
+
+</body>
+</html>

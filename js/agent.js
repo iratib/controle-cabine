@@ -1,0 +1,2014 @@
+// ============================================================
+// agent.js – Logique interface agent
+// ============================================================
+
+import { supabase, isDemoMode } from './supabase-client.js';
+import { requireRole, logout } from './auth.js';
+import { showToast, formatDate, getStatutBadge } from './utils.js';
+import {
+  demoCreateVol, demoGetVols, demoGetVol,
+  demoGetControles, demoUpsertControle, demoUpdateVol
+} from './demo-db.js';
+
+// ---- DONNÉES DE RÉFÉRENCE : FICHES PAR TYPE DE VOL ----
+
+const FICHE_STRUCTURES = {
+  'Moyen Porteur Transit': [
+    {
+      zone: 'Cockpit', partie: 'Équipage', sous_zone: null, icon: '🛩',
+      points: [
+        'Sol propre (sans résidus, poussières)',
+        'Tablettes pilotes propres',
+        'Poubelles vidées',
+        'Pare-brise intérieur essuyé',
+        'Aucun objet oublié (FOD)'
+      ]
+    },
+    {
+      zone: 'Cabine', partie: 'Équipage', sous_zone: 'Y/CL', icon: '💺',
+      points: [
+        'Sièges propres et alignés (Rangée 8-9-10-17-18-19)',
+        'Reste Sièges propres et alignés',
+        'Ceintures croisées correctement (Rangée 8-9-10-17-18-19)',
+        'Reste Ceintures croisées correctement',
+        'Tablettes propres et fonctionnelles',
+        'Poches sièges vides (Rangée 8-9-10-17-18-19)',
+        'Reste Poches sièges vides',
+        'Rideaux propres',
+        'Coffres à bagages propres',
+        'Moquette aspirée'
+      ]
+    },
+    {
+      zone: 'Cabine', partie: 'Équipage', sous_zone: 'C/CL', icon: '👑',
+      points: [
+        'Totalité Sièges et consoles propres',
+        'Totalité Écrans sans traces',
+        'Totalité Table repas propre',
+        'Rideaux propres'
+      ]
+    },
+    {
+      zone: 'Toilettes', partie: null, sous_zone: null, icon: '🚽',
+      points: [
+        'Cuvette nettoyée et désinfectée',
+        'Lunette toilette propre',
+        'Lavabo propre et désinfecté',
+        'Miroir propre',
+        'Sol lavé et désinfecté',
+        'Poubelle vidée',
+        'Odeur neutre'
+      ]
+    },
+    {
+      zone: 'Galley', partie: null, sous_zone: null, icon: '🍽',
+      points: [
+        'Plans de travail nettoyés',
+        'Tiroirs propres',
+        'Sol nettoyé et sec',
+        'Poubelles vidées',
+        'Aucun reste alimentaire'
+      ]
+    },
+    {
+      zone: 'Client', partie: 'Client', sous_zone: null, icon: '🧑‍✈️',
+      points: [
+        'Propreté générale cabine satisfaisante',
+        "Absence d'odeurs désagréables",
+        'Tablettes sans traces',
+        'Hublots propres',
+        'Toilettes acceptables pour usage immédiat',
+        'Aucun déchet visible',
+        "Impression générale positive à l'embarquement"
+      ]
+    }
+  ]
+};
+
+FICHE_STRUCTURES['Gros Porteur Transit'] = [
+  {
+    zone: 'Cockpit', partie: 'Équipage', sous_zone: null, icon: '🛩',
+    points: [
+      'Sol aspiré',
+      'Sièges pilotes propres',
+      'Tablettes et panneaux essuyés',
+      'Poubelles vidées',
+      'Aucun objet oublié'
+    ]
+  },
+  {
+    zone: 'Cabine', partie: 'Équipage', sous_zone: 'Y/CL', icon: '💺',
+    points: [
+      'Sièges propres (dossier, accoudoirs Rangee 10-11-12-28-29)',
+      'Reste Sièges propres et alignés',
+      'Tablettes propres',
+      'Écrans nettoyés',
+      'Ceintures croisées (Rangee 10-11-12-28-29)',
+      'Reste Ceintures croisées correctement',
+      'Poches sièges vides (Rangee 10-11-12-28-29)',
+      'Reste Poches sièges vides',
+      'Moquette aspirée'
+    ]
+  },
+  {
+    zone: 'Cabine', partie: 'Équipage', sous_zone: 'C/CL', icon: '👑',
+    points: [
+      'Totalité Sièges propres',
+      'Totalité Écrans sans traces',
+      'Totalité Table repas propre',
+      'Espaces personnels nettoyés',
+      'Rideaux propres'
+    ]
+  },
+  {
+    zone: 'Premium Economy', partie: 'Équipage', sous_zone: null, icon: '⭐',
+    points: [
+      'Siège et repose pieds propres'
+    ]
+  },
+  {
+    zone: 'CRC', partie: 'Équipage', sous_zone: null, icon: '🛌',
+    points: [
+      'Avant (PNT)',
+      'Arrière (PNC)'
+    ]
+  },
+  {
+    zone: 'Toilettes', partie: null, sous_zone: null, icon: '🚽',
+    points: [
+      'Nettoyage complet et désinfection',
+      'Sol lavé et sec',
+      'Lavabo et robinetterie propres',
+      'Table à langer propre',
+      'Poubelles vidées',
+      'Produits consommables en place'
+    ]
+  },
+  {
+    zone: 'Galley', partie: null, sous_zone: null, icon: '🍽',
+    points: [
+      'Plans de travail désinfectés',
+      'Compartiments propres',
+      'Sol lavé et désinfecté',
+      'Poubelles vidées',
+      'Aucun reste catering'
+    ]
+  },
+  {
+    zone: 'Client', partie: 'Client', sous_zone: null, icon: '🧑‍✈️',
+    points: [
+      'Cabine visuellement propre',
+      "Absence totale d'odeurs",
+      'Sièges confortables et propres',
+      'Écrans propres et lisibles',
+      "Toilettes propres à l'embarquement",
+      'Galley discret et propre',
+      'Niveau de propreté conforme long-courrier'
+    ]
+  }
+];
+
+FICHE_STRUCTURES['Moyen Porteur Stop Cmn'] = [
+  {
+    zone: 'Cockpit', partie: 'Équipage', sous_zone: null, icon: '🛩',
+    points: [
+      'Sol propre (sans résidus, poussières)',
+      'Tablettes pilotes propres',
+      'Poubelles vidées',
+      'Pare-brise intérieur essuyé',
+      'Aucun objet oublié (FOD)'
+    ]
+  },
+  {
+    zone: 'Cabine', partie: 'Équipage', sous_zone: 'Y/CL', icon: '💺',
+    points: [
+      'Totalité Sièges propres et alignés',
+      'Totalité Ceintures croisées correctement',
+      'Totalité Tablettes propres et fonctionnelles',
+      'Totalité Poches sièges vides',
+      'Rideaux propres',
+      'Coffres à bagages propres',
+      'Moquette aspirée'
+    ]
+  },
+  {
+    zone: 'Cabine', partie: 'Équipage', sous_zone: 'C/CL', icon: '👑',
+    points: [
+      'Totalité Sièges et consoles propres',
+      'Totalité Écrans sans traces',
+      'Totalité Table repas propre',
+      'Espaces personnels nettoyés',
+      'Rideaux propres'
+    ]
+  },
+  {
+    zone: 'Toilettes', partie: null, sous_zone: null, icon: '🚽',
+    points: [
+      'Cuvette nettoyée et désinfectée',
+      'Lunette toilette propre',
+      'Lavabo propre et désinfecté',
+      'Miroir propre',
+      'Sol lavé et désinfecté',
+      'Poubelle vidée',
+      'Odeur neutre'
+    ]
+  },
+  {
+    zone: 'Galley', partie: null, sous_zone: null, icon: '🍽',
+    points: [
+      'Plans de travail nettoyés',
+      'Tiroirs propres',
+      'Sol nettoyé et sec',
+      'Poubelles vidées',
+      'Aucun reste alimentaire'
+    ]
+  },
+  {
+    zone: 'Client', partie: 'Client', sous_zone: null, icon: '🧑‍✈️',
+    points: [
+      'Propreté générale cabine satisfaisante',
+      "Absence d'odeurs désagréables",
+      'Tablettes sans traces',
+      'Hublots propres',
+      'Toilettes acceptables pour usage immédiat',
+      'Aucun déchet visible',
+      "Impression générale positive à l'embarquement"
+    ]
+  }
+];
+
+FICHE_STRUCTURES['Gros Porteur Stop Cmn'] = [
+  {
+    zone: 'Cockpit', partie: 'Équipage', sous_zone: null, icon: '🛩',
+    points: [
+      'Sol aspiré',
+      'Sièges pilotes propres',
+      'Tablettes et panneaux essuyés',
+      'Poubelles vidées',
+      'Aucun objet oublié'
+    ]
+  },
+  {
+    zone: 'Cabine ECO', partie: 'Équipage', sous_zone: null, icon: '💺',
+    points: [
+      'Sièges propres (dossier, accoudoirs)',
+      'Totalité Tablettes propres',
+      'Totalité Écrans nettoyés',
+      'Totalité Ceintures croisées',
+      'Totalité Poches sièges vides',
+      'Moquette aspirée'
+    ]
+  },
+  {
+    zone: 'Premium Economy', partie: 'Équipage', sous_zone: null, icon: '⭐',
+    points: [
+      'Totalité Siège et repose pieds propres'
+    ]
+  },
+  {
+    zone: 'Cabine', partie: 'Équipage', sous_zone: 'C/CL', icon: '👑',
+    points: [
+      'Totalité Sièges propres',
+      'Totalité Écrans sans traces',
+      'Totalité Table repas propre',
+      'Espaces personnels nettoyés',
+      'Rideaux propres'
+    ]
+  },
+  {
+    zone: 'CRC', partie: 'Équipage', sous_zone: null, icon: '🛌',
+    points: [
+      'Avant (PNT)',
+      'Arrière (PNC)'
+    ]
+  },
+  {
+    zone: 'Toilettes', partie: null, sous_zone: null, icon: '🚽',
+    points: [
+      'Nettoyage complet et désinfection',
+      'Sol lavé et sec',
+      'Lavabo et robinetterie propres',
+      'Table à langer propre',
+      'Poubelles vidées',
+      'Produits consommables en place'
+    ]
+  },
+  {
+    zone: 'Galley', partie: null, sous_zone: null, icon: '🍽',
+    points: [
+      'Plans de travail désinfectés',
+      'Compartiments propres',
+      'Sol lavé et désinfecté',
+      'Poubelles vidées',
+      'Aucun reste catering'
+    ]
+  },
+  {
+    zone: 'Client', partie: 'Client', sous_zone: null, icon: '🧑‍✈️',
+    points: [
+      'Cabine visuellement propre',
+      "Absence totale d'odeurs",
+      'Sièges confortables et propres',
+      'Écrans propres et lisibles',
+      "Toilettes propres à l'embarquement",
+      'Galley discret et propre',
+      'Niveau de propreté conforme long-courrier'
+    ]
+  }
+];
+
+function getFicheStructure(typeVol) {
+  return FICHE_STRUCTURES[typeVol] || FICHE_STRUCTURES['Moyen Porteur Transit'];
+}
+function getTotalPoints(typeVol) {
+  return getFicheStructure(typeVol).reduce((acc, s) => acc + s.points.length, 0);
+}
+
+// ---- STATE ----
+
+let currentUser = null;
+let currentVolId = null;
+let currentTypeVol = null;
+let controles = {}; // clé = "zone|sous_zone|point", valeur = { conformite, observation, controle_id }
+let autosaveTimeout = null;
+let isOffline = false;
+
+// ---- INIT ----
+
+async function init() {
+  const auth = await requireRole('agent');
+  if (!auth) return;
+  currentUser = auth.profile;
+
+  // Sidebar
+  document.getElementById('agentNom').textContent = currentUser.nom;
+  const initials = currentUser.nom.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  const sidebarAv = document.getElementById('sidebarAvatar');
+  if (sidebarAv) sidebarAv.textContent = initials;
+  // Topbar
+  const nomTopbar = document.getElementById('agentNomTopbar');
+  if (nomTopbar) nomTopbar.textContent = currentUser.nom;
+  const topbarAv = document.getElementById('topbarAvatar');
+  if (topbarAv) topbarAv.textContent = initials;
+  document.getElementById('btnLogout').addEventListener('click', logout);
+
+  // Date par défaut = aujourd'hui
+  document.getElementById('dateVol').valueAsDate = new Date();
+
+  setupNavigation();
+  setupFormEntete();
+  setupOfflineDetection();
+  loadMesControles();
+  updateBadgeEnCours();
+
+  // Sidebar mobile
+  document.getElementById('btnMenu').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('sidebar-open');
+  });
+}
+
+// ---- NAVIGATION ----
+
+function setupNavigation() {
+  document.querySelectorAll('.sidebar-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const view = link.dataset.view;
+      showView(view);
+      document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
+      link.classList.add('active');
+      document.getElementById('sidebar').classList.remove('sidebar-open');
+    });
+  });
+}
+
+function showView(viewName) {
+  document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
+  if (viewName === 'nouveau') {
+    document.getElementById('viewNouveau').style.display = 'block';
+  } else if (viewName === 'mes-controles') {
+    document.getElementById('viewMesControles').style.display = 'block';
+    loadMesControles();
+  }
+}
+
+// ---- FORMULAIRE EN-TÊTE ----
+
+function setupFormEntete() {
+  // Sélection du type de vol via cartes
+  document.querySelectorAll('.type-vol-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.type-vol-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      document.getElementById('typeVol').value = card.dataset.value;
+    });
+  });
+
+  // Formatage code compagnie : 2 lettres max, uppercase
+  document.getElementById('codeCompagnie').addEventListener('input', function () {
+    this.value = this.value.toUpperCase().replace(/[^A-Z]/g, '').substring(0, 2);
+  });
+
+  // Numéro de vol : chiffres seulement, max 4
+  document.getElementById('numeroVol').addEventListener('input', function () {
+    this.value = this.value.replace(/[^0-9]/g, '').substring(0, 4);
+  });
+
+  // Heure fin toujours > heure début
+  document.getElementById('heureDebut').addEventListener('change', function () {
+    const fin = document.getElementById('heureFin');
+    fin.min = this.value;
+    if (fin.value && fin.value <= this.value) fin.value = '';
+  });
+
+  // Formatage immatriculation : XX-XXX automatique
+  document.getElementById('immatriculation').addEventListener('input', function () {
+    const letters = this.value.toUpperCase().replace(/[^A-Z]/g, '');
+    if (letters.length <= 2) {
+      this.value = letters;
+    } else {
+      this.value = letters.substring(0, 2) + '-' + letters.substring(2, 5);
+    }
+  });
+
+  document.getElementById('formEntete').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const dateVol = document.getElementById('dateVol').value;
+    const codeCompagnie = document.getElementById('codeCompagnie').value.trim().toUpperCase();
+    const numeroVolRaw = document.getElementById('numeroVol').value.trim().toUpperCase();
+    const numeroVol = codeCompagnie + numeroVolRaw;
+    const immatriculation = document.getElementById('immatriculation').value.trim();
+    const typeVol = document.getElementById('typeVol').value;
+    const heureDebut = document.getElementById('heureDebut').value || null;
+    const heureFin = document.getElementById('heureFin').value || null;
+
+    if (!typeVol) {
+      showToast('Veuillez sélectionner le type de vol.', 'error');
+      return;
+    }
+    if (!dateVol || !codeCompagnie || !numeroVolRaw) {
+      showToast('Veuillez remplir les champs obligatoires (date, code cie, numéro de vol).', 'error');
+      return;
+    }
+    if (heureDebut && heureFin && heureFin <= heureDebut) {
+      showToast('L\'heure de fin doit être supérieure à l\'heure de début.', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('btnCommencer');
+    btn.disabled = true;
+    btn.textContent = 'Création…';
+
+    try {
+      if (isDemoMode) {
+        const vol = demoCreateVol({
+          numero_vol: numeroVol,
+          date_vol: dateVol,
+          type_vol: typeVol,
+          immatriculation: immatriculation || null,
+          heure_debut: heureDebut,
+          heure_fin: heureFin,
+          agent_id: 'demo',
+          statut: 'en_cours'
+        });
+        currentVolId = vol.id;
+        controles = {};
+        showToast('Vol créé. Fiche de contrôle ouverte.', 'success');
+        afficherFiche(vol);
+        updateBadgeEnCours();
+        return;
+      }
+
+      const { data: vol, error } = await supabase.from('vols').insert({
+        numero_vol: numeroVol,
+        date_vol: dateVol,
+        type_vol: typeVol,
+        immatriculation: immatriculation || null,
+        heure_debut: heureDebut,
+        heure_fin: heureFin,
+        agent_id: currentUser.id,
+        statut: 'en_cours'
+      }).select().single();
+
+      if (error) throw error;
+
+      currentVolId = vol.id;
+      controles = {};
+      showToast('Vol créé. Fiche de contrôle ouverte.', 'success');
+      afficherFiche(vol);
+      updateBadgeEnCours();
+    } catch (err) {
+      showToast('Erreur lors de la création du vol.', 'error');
+      console.error(err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Commencer le contrôle →';
+    }
+  });
+}
+
+// ---- FICHE DE CONTRÔLE ----
+
+function afficherFiche(vol) {
+  document.getElementById('step1').style.display = 'none';
+  document.getElementById('step2').style.display = 'block';
+
+  currentTypeVol = vol.type_vol;
+
+  // Infos bar
+  document.getElementById('volBadgeNumero').textContent = vol.numero_vol;
+  document.getElementById('volBadgeDate').textContent = formatDate(vol.date_vol);
+  document.getElementById('volBadgeType').textContent = vol.type_vol;
+
+  document.getElementById('btnAnnulerFiche').addEventListener('click', () => {
+    document.getElementById('modalRetour').style.display = 'flex';
+  });
+
+  // Réinitialiser la section matériel
+  document.getElementById('nbAspirateurs').value = '';
+  document.getElementById('nbAgents').value = '';
+  document.querySelectorAll('.mat-check').forEach(cb => { cb.checked = false; });
+
+  // Construire l'accordéon
+  const accordion = document.getElementById('ficheAccordion');
+  accordion.innerHTML = '';
+  const ficheStructure = getFicheStructure(vol.type_vol);
+  let lastPartie = null;
+
+  ficheStructure.forEach((section, sIdx) => {
+    if (section.partie && section.partie !== lastPartie) {
+      lastPartie = section.partie;
+      const partieHeader = document.createElement('div');
+      partieHeader.className = 'partie-header';
+      partieHeader.textContent = section.partie === 'Client' ? 'PARTIE CLIENT' : 'PARTIE ÉQUIPAGE';
+      accordion.appendChild(partieHeader);
+    }
+    const isFirst = sIdx === 0;
+    const bodyId = `body_${sIdx}`;
+    const card = document.createElement('div');
+    card.className = 'card accordion-card';
+    if (!isFirst) card.classList.add('section-locked');
+
+    const headerLabel = section.sous_zone
+      ? `${section.icon} ${section.zone} – ${section.sous_zone}`
+      : `${section.icon} ${section.zone}`;
+
+    card.innerHTML = `
+      <button class="accordion-header" data-target="${bodyId}" data-sidx="${sIdx}">
+        <span>${headerLabel}${!isFirst ? ' <i class="fas fa-lock section-lock-icon"></i>' : ''}</span>
+        <div class="accordion-meta">
+          <span class="section-progress" id="prog_${sIdx}">0/${section.points.length}</span>
+          <span class="accordion-arrow">${isFirst ? '▲' : '▼'}</span>
+        </div>
+      </button>
+      <div class="accordion-body${isFirst ? ' open' : ''}" id="${bodyId}">
+        ${section.points.map((point, pIdx) => buildPointHTML(section, point, sIdx, pIdx)).join('')}
+      </div>
+    `;
+    accordion.appendChild(card);
+  });
+
+  // Accordéon toggle fiche
+  accordion.querySelectorAll('.accordion-header').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('.accordion-card');
+      if (card.classList.contains('section-locked')) {
+        showToast('Complétez la section précédente avant de continuer.', 'error');
+        return;
+      }
+      const targetId = btn.dataset.target;
+      const body = document.getElementById(targetId);
+      body.classList.toggle('open');
+      btn.querySelector('.accordion-arrow').textContent = body.classList.contains('open') ? '▲' : '▼';
+    });
+  });
+
+  // Section matériel accordéon
+  const materielHeaderBtn = document.querySelector('#sectionMateriel .accordion-header');
+  if (materielHeaderBtn) {
+    materielHeaderBtn.addEventListener('click', function () {
+      const parentCard = this.closest('.accordion-card');
+      if (parentCard && parentCard.classList.contains('section-locked')) {
+        showToast('Complétez toutes les sections de contrôle avant d\'accéder au matériel.', 'error');
+        return;
+      }
+      const target = document.getElementById(this.dataset.target);
+      if (target) {
+        target.classList.toggle('open');
+        const arrow = this.querySelector('.accordion-arrow');
+        if (arrow) arrow.textContent = target.classList.contains('open') ? '▲' : '▼';
+      }
+    });
+  }
+
+  // Radios de conformité
+  accordion.querySelectorAll('.conformite-radio').forEach(radio => {
+    radio.addEventListener('change', onConformiteChange);
+  });
+
+  // Soumettre
+  document.getElementById('btnSoumettre').addEventListener('click', confirmSoumission);
+
+  // Verrouiller matériel jusqu'à la fin de toutes les sections
+  document.getElementById('sectionMateriel').classList.add('section-locked');
+
+  // Matériel auto-save
+  document.getElementById('nbAspirateurs').addEventListener('change', () => autosaveMateriel());
+  document.getElementById('nbAgents').addEventListener('change', () => autosaveMateriel());
+  document.querySelectorAll('.mat-check').forEach(cb => {
+    cb.addEventListener('change', () => autosaveMateriel());
+  });
+
+  // Tout cocher
+  document.getElementById('btnToutCocher').addEventListener('click', () => {
+    document.querySelectorAll('.mat-check').forEach(cb => { cb.checked = true; });
+    autosaveMateriel();
+    showToast('Tout le matériel coché ✓', 'success');
+  });
+
+  updateProgress();
+  loadExistingControles();
+}
+
+function buildPointHTML(section, point, sIdx, pIdx) {
+  const inputName = `conformite_${sIdx}_${pIdx}`;
+  return `
+    <div class="point-controle" id="point_${sIdx}_${pIdx}" data-zone="${section.zone}" data-sous-zone="${section.sous_zone || ''}" data-point="${escapeAttr(point)}">
+      <div class="point-label">${point}</div>
+      <div class="conformite-buttons">
+        <label class="radio-btn radio-c">
+          <input type="radio" class="conformite-radio" name="${inputName}" value="C" />
+          <span>✅ C</span>
+        </label>
+        <label class="radio-btn radio-nc">
+          <input type="radio" class="conformite-radio" name="${inputName}" value="NC" />
+          <span>❌ NC</span>
+        </label>
+      </div>
+      <div class="nc-details" id="nc_${sIdx}_${pIdx}" style="display:none;">
+        <textarea class="nc-observation" id="obs_${sIdx}_${pIdx}" placeholder="Observation / Commentaire…" rows="2"></textarea>
+        <div class="photo-upload-zone">
+          <input type="file" class="photo-input" id="photo_${sIdx}_${pIdx}" accept="image/*" multiple style="display:none;" />
+          <input type="file" class="photo-input-cam" id="photocam_${sIdx}_${pIdx}" accept="image/*" capture="environment" style="display:none;" />
+          <div class="photo-btns">
+            <button type="button" class="btn btn-outline btn-sm" data-input="photo_${sIdx}_${pIdx}" data-sidx="${sIdx}" data-pidx="${pIdx}">🖼 Galerie</button>
+            <button type="button" class="btn btn-outline btn-sm" data-input-cam="photocam_${sIdx}_${pIdx}" data-sidx="${sIdx}" data-pidx="${pIdx}">📷 Caméra</button>
+          </div>
+          <div class="photo-upload-progress" id="photoProgress_${sIdx}_${pIdx}" style="display:none;">
+            <div class="progress-mini"><div class="progress-mini-fill" id="photoProgressFill_${sIdx}_${pIdx}"></div></div>
+            <span>Upload…</span>
+          </div>
+          <div class="photo-preview" id="photoPreview_${sIdx}_${pIdx}"></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function escapeAttr(str) {
+  return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function getKey(zone, sousZone, point) {
+  return `${zone}|${sousZone || ''}|${point}`;
+}
+
+// ---- ÉVÉNEMENTS CONFORMITÉ ----
+
+function onConformiteChange(e) {
+  const radio = e.target;
+  const pointEl = radio.closest('.point-controle');
+  const zone = pointEl.dataset.zone;
+  const sousZone = pointEl.dataset.sousZone || null;
+  const point = pointEl.dataset.point;
+  const conformite = radio.value;
+  const key = getKey(zone, sousZone, point);
+
+  // Afficher/masquer les détails NC
+  const nameAttr = radio.name;
+  const [, sIdx, pIdx] = nameAttr.split('_');
+  const ncDetails = document.getElementById(`nc_${sIdx}_${pIdx}`);
+  if (ncDetails) {
+    ncDetails.style.display = (conformite === 'NC') ? 'block' : 'none';
+  }
+
+  if (!controles[key]) controles[key] = {};
+  controles[key].conformite = conformite;
+  controles[key].zone = zone;
+  controles[key].sous_zone = sousZone;
+  controles[key].point = point;
+
+  // Style du point
+  pointEl.classList.remove('point-c', 'point-nc', 'point-na');
+  pointEl.classList.add(`point-${conformite.toLowerCase()}`);
+
+  updateProgress();
+  checkAndUnlockNext(parseInt(sIdx));
+  scheduleAutosave(sIdx, pIdx, key);
+
+  // Configurer upload photo — galerie (multiple)
+  const photoBtnEl = document.querySelector(`[data-input="photo_${sIdx}_${pIdx}"]`);
+  if (photoBtnEl) photoBtnEl.onclick = () => document.getElementById(`photo_${sIdx}_${pIdx}`).click();
+  const photoInput = document.getElementById(`photo_${sIdx}_${pIdx}`);
+  if (photoInput && !photoInput.dataset.bound) {
+    photoInput.dataset.bound = '1';
+    photoInput.addEventListener('change', (ev) => handlePhotoUpload(ev, sIdx, pIdx, key));
+  }
+  // Caméra
+  const photoCamBtnEl = document.querySelector(`[data-input-cam="photocam_${sIdx}_${pIdx}"]`);
+  if (photoCamBtnEl) photoCamBtnEl.onclick = () => document.getElementById(`photocam_${sIdx}_${pIdx}`).click();
+  const photoCamInput = document.getElementById(`photocam_${sIdx}_${pIdx}`);
+  if (photoCamInput && !photoCamInput.dataset.bound) {
+    photoCamInput.dataset.bound = '1';
+    photoCamInput.addEventListener('change', (ev) => handlePhotoUpload(ev, sIdx, pIdx, key));
+  }
+
+  // Observation auto-save
+  const obsEl = document.getElementById(`obs_${sIdx}_${pIdx}`);
+  if (obsEl && !obsEl.dataset.bound) {
+    obsEl.dataset.bound = '1';
+    obsEl.addEventListener('input', () => {
+      controles[key].observation = obsEl.value;
+      scheduleAutosave(sIdx, pIdx, key);
+    });
+  }
+}
+
+// ---- AUTOSAVE ----
+
+function scheduleAutosave(sIdx, pIdx, key) {
+  clearTimeout(autosaveTimeout);
+  autosaveTimeout = setTimeout(() => saveControle(key), 1000);
+  saveToLocalStorage();
+}
+
+async function flushSaves() {
+  if (isDemoMode || !currentVolId) return;
+  clearTimeout(autosaveTimeout);
+  const keys = Object.keys(controles).filter(k => controles[k]?.conformite);
+  await Promise.all(keys.map(async key => {
+    const c = controles[key];
+    if (!c.conformite) return;
+    const payload = {
+      vol_id: currentVolId,
+      zone: c.zone,
+      sous_zone: c.sous_zone || null,
+      point_controle: c.point,
+      conformite: c.conformite,
+      observation: c.observation || null
+    };
+    try {
+      let result;
+      if (c.controle_id) {
+        result = await supabase.from('controles').update(payload).eq('id', c.controle_id).select().single();
+      } else {
+        result = await supabase.from('controles').insert(payload).select().single();
+        if (result.data) controles[key].controle_id = result.data.id;
+      }
+    } catch {}
+  }));
+}
+
+async function saveControle(key) {
+  if (!currentVolId || !controles[key]) return;
+  const c = controles[key];
+  if (!c.conformite) return;
+
+  if (isDemoMode) {
+    const result = demoUpsertControle({
+      vol_id: currentVolId,
+      zone: c.zone,
+      sous_zone: c.sous_zone || null,
+      point_controle: c.point,
+      conformite: c.conformite,
+      observation: c.observation || null
+    });
+    controles[key].controle_id = result.id;
+    showToast('Enregistré ✓', 'success', 1500);
+    return;
+  }
+
+  try {
+    const payload = {
+      vol_id: currentVolId,
+      zone: c.zone,
+      sous_zone: c.sous_zone || null,
+      point_controle: c.point,
+      conformite: c.conformite,
+      observation: c.observation || null
+    };
+
+    let result;
+    if (c.controle_id) {
+      result = await supabase.from('controles')
+        .update(payload)
+        .eq('id', c.controle_id)
+        .select().single();
+    } else {
+      result = await supabase.from('controles')
+        .insert(payload)
+        .select().single();
+      if (result.data) {
+        controles[key].controle_id = result.data.id;
+      }
+    }
+    if (result.error) throw result.error;
+    showToast('Enregistré ✓', 'success', 1500);
+  } catch (err) {
+    console.error('Autosave error:', err);
+    if (!isOffline) showToast('Erreur d\'enregistrement', 'error');
+  }
+}
+
+async function autosaveMateriel() {
+  if (!currentVolId || isDemoMode) return;
+
+  await supabase.from('materiels_utilises').delete().eq('vol_id', currentVolId);
+
+  const items = [];
+
+  const nbAsp = parseInt(document.getElementById('nbAspirateurs').value) || 0;
+  if (nbAsp > 0) {
+    items.push({ vol_id: currentVolId, categorie: 'Nombre aspirateurs', nom_materiel: 'Aspirateur', quantite: nbAsp, utilise: true });
+  }
+
+  const nbAgents = parseInt(document.getElementById('nbAgents').value) || 0;
+  if (nbAgents > 0) {
+    items.push({ vol_id: currentVolId, categorie: 'Nombre agents', nom_materiel: 'Agent', quantite: nbAgents, utilise: true });
+  }
+
+  document.querySelectorAll('.mat-check:checked').forEach(cb => {
+    items.push({ vol_id: currentVolId, categorie: cb.dataset.cat, nom_materiel: cb.dataset.nom, quantite: 1, utilise: true });
+  });
+
+  if (items.length > 0) {
+    await supabase.from('materiels_utilises').insert(items);
+  }
+}
+
+// ---- PROGRESSION ----
+
+function updateProgress() {
+  const totalPoints = getTotalPoints(currentTypeVol);
+  const filled = Object.values(controles).filter(c => c.conformite).length;
+  const pct = totalPoints > 0 ? Math.round((filled / totalPoints) * 100) : 0;
+
+  document.getElementById('progressPercent').textContent = pct + '%';
+  document.getElementById('progressCount').textContent = `(${filled} / ${totalPoints})`;
+
+  const fill = document.getElementById('progressFill');
+  fill.style.width = pct + '%';
+  fill.className = 'progress-bar-fill';
+  if (pct < 33) fill.classList.add('progress-red');
+  else if (pct < 66) fill.classList.add('progress-orange');
+  else fill.classList.add('progress-green');
+
+  // Progression par section
+  getFicheStructure(currentTypeVol).forEach((section, sIdx) => {
+    const total = section.points.length;
+    let done = 0;
+    section.points.forEach(point => {
+      const key = getKey(section.zone, section.sous_zone, point);
+      if (controles[key]?.conformite) done++;
+    });
+    const progEl = document.getElementById(`prog_${sIdx}`);
+    if (progEl) progEl.textContent = `${done}/${total}`;
+  });
+
+  updateSubmitInfo();
+}
+
+function updateSubmitInfo() {
+  const vals = Object.values(controles);
+  const C = vals.filter(c => c.conformite === 'C').length;
+  const NC = vals.filter(c => c.conformite === 'NC').length;
+  const filled = C + NC;
+  const taux = filled > 0 ? ((C / filled) * 100).toFixed(1) : '0.0';
+
+  document.getElementById('submitInfo').innerHTML = `
+    <span class="badge-stat badge-c">✅ ${C} Conformes</span>
+    <span class="badge-stat badge-nc">❌ ${NC} Non conformes</span>
+    <span class="badge-stat badge-taux">📊 Taux: ${taux}%</span>
+  `;
+}
+
+// ---- UPLOAD PHOTO ----
+
+async function handlePhotoUpload(event, sIdx, pIdx, key) {
+  const files = Array.from(event.target.files);
+  if (!files.length || !currentVolId) return;
+
+  const progressEl = document.getElementById(`photoProgress_${sIdx}_${pIdx}`);
+  const progressFill = document.getElementById(`photoProgressFill_${sIdx}_${pIdx}`);
+  const previewEl = document.getElementById(`photoPreview_${sIdx}_${pIdx}`);
+
+  progressEl.style.display = 'flex';
+  progressFill.style.width = '5%';
+
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const compressed = await compressImage(file);
+      progressFill.style.width = `${Math.round(((i + 0.4) / files.length) * 90) + 5}%`;
+
+      if (isDemoMode) {
+        const localUrl = URL.createObjectURL(compressed);
+        const img = document.createElement('img');
+        img.src = localUrl;
+        img.className = 'photo-thumb';
+        img.addEventListener('click', () => openLightbox(localUrl));
+        previewEl.appendChild(img);
+        continue;
+      }
+
+      const c = controles[key];
+      const zone = c.zone.replace(/[^a-z0-9]/gi, '_');
+      const timestamp = Date.now() + i;
+      const safeName = file.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9._-]/gi, '_');
+      const path = `${currentVolId}/${zone}/${timestamp}_${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('photos-controle')
+        .upload(path, compressed, { contentType: 'image/jpeg', upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage.from('photos-controle').getPublicUrl(path);
+      const publicUrl = urlData.publicUrl;
+
+      await supabase.from('photos').insert({
+        controle_id: controles[key]?.controle_id || null,
+        vol_id: currentVolId,
+        storage_path: path,
+        url_publique: publicUrl
+      });
+
+      const img = document.createElement('img');
+      img.src = publicUrl;
+      img.className = 'photo-thumb';
+      img.addEventListener('click', () => openLightbox(publicUrl));
+      previewEl.appendChild(img);
+
+      progressFill.style.width = `${Math.round(((i + 1) / files.length) * 100)}%`;
+    }
+
+    if (isDemoMode) showToast(`${files.length} photo(s) ajoutée(s) (mode démo)`, 'info');
+    else showToast(`${files.length} photo(s) uploadée(s) ✓`, 'success');
+  } catch (err) {
+    console.error('Photo upload error:', err);
+    showToast('Erreur upload photo', 'error');
+  } finally {
+    event.target.value = '';
+    setTimeout(() => { progressEl.style.display = 'none'; }, 1000);
+  }
+}
+
+async function compressImage(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxSize = 800;
+        let { width, height } = img;
+        if (width > height && width > maxSize) {
+          height = (height / width) * maxSize;
+          width = maxSize;
+        } else if (height > maxSize) {
+          width = (width / height) * maxSize;
+          height = maxSize;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(resolve, 'image/jpeg', 0.75);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ---- SOUMISSION ----
+
+function confirmSoumission() {
+  const vals = Object.values(controles);
+  const C = vals.filter(c => c.conformite === 'C').length;
+  const NC = vals.filter(c => c.conformite === 'NC').length;
+  const total = getTotalPoints(currentTypeVol);
+  const filled = C + NC;
+
+  if (filled < total) {
+    showToast(`Veuillez renseigner tous les points avant de soumettre (${filled}/${total} complétés).`, 'error');
+    return;
+  }
+
+  const totalMat = document.querySelectorAll('.mat-check').length;
+  const checkedMat = document.querySelectorAll('.mat-check:checked').length;
+  if (checkedMat < totalMat) {
+    showToast(`Veuillez compléter la section Matériel utilisé (${checkedMat}/${totalMat} cochés).`, 'error');
+    document.getElementById('sectionMateriel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  const taux = filled > 0 ? ((C / filled) * 100).toFixed(1) : '0.0';
+
+  document.getElementById('modalResume').innerHTML = `
+    <div class="resume-grid">
+      <div class="resume-item"><span class="resume-label">Total points</span><span class="resume-value">${total}</span></div>
+      <div class="resume-item"><span class="resume-label">Renseignés</span><span class="resume-value">${filled}</span></div>
+      <div class="resume-item badge-c"><span class="resume-label">Conformes</span><span class="resume-value">${C}</span></div>
+      <div class="resume-item badge-nc"><span class="resume-label">Non conformes</span><span class="resume-value">${NC}</span></div>
+      <div class="resume-item"><span class="resume-label">Taux conformité</span><span class="resume-value">${taux}%</span></div>
+    </div>
+  `;
+
+  document.getElementById('modalSoumettre').style.display = 'flex';
+}
+
+
+document.getElementById('btnAnnulerRetour')?.addEventListener('click', () => {
+  document.getElementById('modalRetour').style.display = 'none';
+});
+
+document.getElementById('btnConfirmerRetour')?.addEventListener('click', () => {
+  document.getElementById('modalRetour').style.display = 'none';
+  document.getElementById('step1').style.display = 'block';
+  document.getElementById('step2').style.display = 'none';
+  document.getElementById('formEntete').reset();
+  document.getElementById('dateVol').valueAsDate = new Date();
+  currentVolId = null;
+  currentTypeVol = null;
+  controles = {};
+  updateProgress();
+});
+
+document.getElementById('btnAnnulerModal')?.addEventListener('click', () => {
+  document.getElementById('modalSoumettre').style.display = 'none';
+});
+
+document.getElementById('btnConfirmerSoumission')?.addEventListener('click', async () => {
+  document.getElementById('modalSoumettre').style.display = 'none';
+
+  if (isDemoMode) {
+    demoUpdateVol(currentVolId, { statut: 'soumis' });
+    openSuccesModal(currentVolId, currentTypeVol);
+    return;
+  }
+
+  try {
+    await flushSaves();
+    await autosaveMateriel();
+    const { error } = await supabase.from('vols')
+      .update({ statut: 'soumis' })
+      .eq('id', currentVolId);
+    if (error) throw error;
+    localStorage.removeItem(`offline_${currentVolId}`);
+    openSuccesModal(currentVolId, currentTypeVol);
+  } catch (err) {
+    showToast('Erreur lors de la soumission', 'error');
+    console.error(err);
+  }
+});
+
+function openSuccesModal(volId, typeVol) {
+  const C  = Object.values(controles).filter(c => c.conformite === 'C').length;
+  const NC = Object.values(controles).filter(c => c.conformite === 'NC').length;
+  const total = C + NC;
+  const taux  = total ? Math.round(C / total * 100) : 0;
+
+  document.getElementById('succesStats').innerHTML = `
+    <div class="succes-stat green"><div class="succes-stat-value">${C}</div><div class="succes-stat-label">Conformes</div></div>
+    <div class="succes-stat red"><div class="succes-stat-value">${NC}</div><div class="succes-stat-label">Non conformes</div></div>
+    <div class="succes-stat blue"><div class="succes-stat-value">${taux}%</div><div class="succes-stat-label">Taux C</div></div>
+  `;
+  document.getElementById('succesSubtitle').textContent = `Fiche ${typeVol || ''} transmise avec succès.`;
+
+  const btnPDF   = document.getElementById('btnSuccesPDF');
+  const btnShare = document.getElementById('btnSuccesShare');
+
+  btnPDF.onclick = () => downloadFichePDF(volId, typeVol);
+
+  btnShare.onclick = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Fiche de contrôle cabine', text: `Contrôle ${typeVol} – ${taux}% conformité` });
+      } catch {}
+    } else {
+      downloadFichePDF(volId, typeVol);
+    }
+  };
+
+  document.getElementById('modalSucces').style.display = 'flex';
+}
+
+function closeSuccesAndReset() {
+  document.getElementById('modalSucces').style.display = 'none';
+  document.getElementById('step2').style.display = 'none';
+  document.getElementById('step1').style.display = 'block';
+  document.getElementById('formEntete').reset();
+  document.getElementById('dateVol').valueAsDate = new Date();
+  currentVolId = null;
+  currentTypeVol = null;
+  controles = {};
+  updateBadgeEnCours();
+}
+
+document.getElementById('btnSuccesRetour')?.addEventListener('click', closeSuccesAndReset);
+document.getElementById('btnSuccesPDF')?.addEventListener('click', () => {});  // géré dans openSuccesModal
+
+// ---- MES CONTRÔLES ----
+
+async function loadMesControles() {
+  const container = document.getElementById('mesControlesTable');
+  if (!container) return;
+  container.innerHTML = '<div class="loading-state">Chargement…</div>';
+
+  if (isDemoMode) {
+    const vols = demoGetVols('demo');
+    if (!vols.length) {
+      container.innerHTML = '<div class="empty-state">Aucun contrôle pour l\'instant.</div>';
+      return;
+    }
+    const rows = vols.map(vol => {
+      const cList = demoGetControles(vol.id);
+      const nc = cList.filter(c => c.conformite === 'NC').length;
+      const canContinue = vol.statut === 'en_cours';
+      return `
+        <tr>
+          <td><strong>${vol.numero_vol}</strong></td>
+          <td>${formatDate(vol.date_vol)}</td>
+          <td>${vol.type_vol}</td>
+          <td><span class="badge-nc-count">${nc}</span></td>
+          <td>${getStatutBadge(vol.statut)}</td>
+          <td>
+            <button class="btn btn-outline btn-xs" onclick="viewFiche('${vol.id}')">Voir</button>
+            ${canContinue ? `<button class="btn btn-primary btn-xs" onclick="continueFiche('${vol.id}')">Continuer</button>` : ''}
+            ${!canContinue ? `<button class="btn btn-outline btn-xs btn-pdf-dl" onclick="downloadFichePDF('${vol.id}','${vol.type_vol}')">⬇ PDF</button>` : ''}
+          </td>
+        </tr>
+      `;
+    }).join('');
+    container.innerHTML = `
+      <table class="data-table">
+        <thead>
+          <tr><th>N° vol</th><th>Date</th><th>Type avion</th><th>Nb NC</th><th>Statut</th><th>Actions</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+    return;
+  }
+
+  try {
+    const { data: vols, error } = await supabase
+      .from('vols')
+      .select('*, controles(conformite)')
+      .eq('agent_id', currentUser.id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    if (!vols || vols.length === 0) {
+      container.innerHTML = '<div class="empty-state">Aucun contrôle pour l\'instant.</div>';
+      return;
+    }
+
+    const rows = vols.map(vol => {
+      const nc = (vol.controles || []).filter(c => c.conformite === 'NC').length;
+      const statutBadge = getStatutBadge(vol.statut);
+      const canContinue = vol.statut === 'en_cours';
+      return `
+        <tr>
+          <td><strong>${vol.numero_vol}</strong></td>
+          <td>${formatDate(vol.date_vol)}</td>
+          <td>${vol.type_vol}</td>
+          <td><span class="badge-nc-count">${nc}</span></td>
+          <td>${statutBadge}</td>
+          <td>
+            <button class="btn btn-outline btn-xs" onclick="viewFiche('${vol.id}')">Voir</button>
+            ${canContinue ? `<button class="btn btn-primary btn-xs" onclick="continueFiche('${vol.id}')">Continuer</button>` : ''}
+            ${!canContinue ? `<button class="btn btn-outline btn-xs btn-pdf-dl" onclick="downloadFichePDF('${vol.id}','${vol.type_vol}')">⬇ PDF</button>` : ''}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    container.innerHTML = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>N° vol</th><th>Date</th><th>Type avion</th>
+            <th>Nb NC</th><th>Statut</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state error">Erreur de chargement.</div>';
+    console.error(err);
+  }
+}
+
+// ---- VOIR FICHE ----
+
+window.viewFiche = async function(volId) {
+  document.getElementById('modalFiche').style.display = 'flex';
+  const body = document.getElementById('modalFicheBody');
+  body.innerHTML = '<div class="loading-state">Chargement…</div>';
+
+  try {
+    let vol, controlesList, photosList;
+
+    if (isDemoMode) {
+      vol = demoGetVol(volId);
+      controlesList = demoGetControles(volId);
+      photosList = [];
+    } else {
+      const r1 = await supabase.from('vols').select('*').eq('id', volId).single();
+      const r2 = await supabase.from('controles').select('*').eq('vol_id', volId);
+      const r3 = await supabase.from('photos').select('*').eq('vol_id', volId);
+      vol = r1.data;
+      controlesList = r2.data || [];
+      photosList = r3.data || [];
+    }
+
+    if (!vol) { body.innerHTML = '<div class="empty-state error">Introuvable.</div>'; return; }
+
+    document.getElementById('modalFicheTitle').textContent = `Fiche – Vol ${vol.numero_vol} – ${formatDate(vol.date_vol)}`;
+
+    const controleMap = {};
+    controlesList.forEach(c => {
+      controleMap[getKey(c.zone, c.sous_zone, c.point_controle)] = c;
+    });
+    const photosMap = {};
+    (photosList || []).forEach(p => {
+      if (!photosMap[p.controle_id]) photosMap[p.controle_id] = [];
+      photosMap[p.controle_id].push(p);
+    });
+
+    const vals = Object.values(controleMap);
+    const C = vals.filter(c => c.conformite === 'C').length;
+    const NC = vals.filter(c => c.conformite === 'NC').length;
+    const taux = (C + NC) > 0 ? ((C / (C + NC)) * 100).toFixed(1) : '—';
+
+    let html = `
+      <div class="fiche-header-print">
+        <h3>Vol ${vol.numero_vol} – ${vol.type_vol}</h3>
+        <p>Date : ${formatDate(vol.date_vol)} | Immat : ${vol.immatriculation || '—'} | ${vol.heure_debut || '—'} → ${vol.heure_fin || '—'}</p>
+        <div class="resume-stats">
+          <span class="badge-stat badge-c">✅ ${C} C</span>
+          <span class="badge-stat badge-nc">❌ ${NC} NC</span>
+          <span class="badge-stat">📊 ${taux}%</span>
+        </div>
+      </div>
+    `;
+
+    getFicheStructure(vol.type_vol).forEach(section => {
+      const label = section.sous_zone ? `${section.zone} – ${section.sous_zone}` : section.zone;
+      html += `<div class="fiche-section-print"><h4>${section.icon} ${label}</h4><div class="fiche-points-print">`;
+      section.points.forEach(point => {
+        const key = getKey(section.zone, section.sous_zone, point);
+        const ctrl = controleMap[key];
+        const conf = ctrl?.conformite || '—';
+        const confClass = conf === 'C' ? 'conf-c' : conf === 'NC' ? 'conf-nc' : '';
+        const confLabel = conf === 'C' ? '✅ C' : conf === 'NC' ? '❌ NC' : '—';
+        let photos = ctrl ? (photosMap[ctrl.id] || []) : [];
+        html += `
+          <div class="fiche-point-row ${confClass}">
+            <span class="point-name">${point}</span>
+            <span class="point-conf ${confClass}">${confLabel}</span>
+            ${ctrl?.observation ? `<span class="point-obs">📝 ${ctrl.observation}</span>` : ''}
+            ${photos.map(p => `<img src="${p.url_publique}" class="photo-thumb-sm" onclick="openLightbox('${p.url_publique}')" />`).join('')}
+          </div>
+        `;
+      });
+      html += `</div></div>`;
+    });
+
+    body.innerHTML = html;
+  } catch (err) {
+    body.innerHTML = '<div class="empty-state error">Erreur de chargement.</div>';
+    console.error(err);
+  }
+};
+
+// ---- CONTINUER FICHE ----
+
+window.downloadFichePDF = downloadFichePDF;
+
+window.continueFiche = async function(volId) {
+  try {
+    let vol, controlesList;
+
+    if (isDemoMode) {
+      vol = demoGetVol(volId);
+      controlesList = demoGetControles(volId);
+    } else {
+      const r1 = await supabase.from('vols').select('*').eq('id', volId).single();
+      const r2 = await supabase.from('controles').select('*').eq('vol_id', volId);
+      vol = r1.data;
+      controlesList = r2.data || [];
+    }
+
+    if (!vol) { showToast('Vol introuvable.', 'error'); return; }
+
+    currentVolId = volId;
+    controles = {};
+    (controlesList || []).forEach(c => {
+      const key = getKey(c.zone, c.sous_zone, c.point_controle);
+      controles[key] = { conformite: c.conformite, observation: c.observation, controle_id: c.id, zone: c.zone, sous_zone: c.sous_zone, point: c.point_controle };
+    });
+
+    showView('nouveau');
+    document.querySelectorAll('.sidebar-link').forEach(l => {
+      l.classList.toggle('active', l.dataset.view === 'nouveau');
+    });
+
+    document.getElementById('dateVol').value = vol.date_vol;
+    document.getElementById('numeroVol').value = vol.numero_vol;
+    document.getElementById('immatriculation').value = vol.immatriculation || '';
+    document.getElementById('typeVol').value = vol.type_vol;
+    document.querySelectorAll('.type-vol-card').forEach(c => {
+      c.classList.toggle('selected', c.dataset.value === vol.type_vol);
+    });
+    document.getElementById('heureDebut').value = vol.heure_debut || '';
+    document.getElementById('heureFin').value = vol.heure_fin || '';
+
+    afficherFiche(vol);
+    restoreConformites();
+  } catch (err) {
+    showToast('Erreur lors du chargement de la fiche.', 'error');
+    console.error(err);
+  }
+};
+
+function restoreConformites() {
+  Object.entries(controles).forEach(([key, c]) => {
+    if (!c.conformite) return;
+    getFicheStructure(currentTypeVol).forEach((section, sIdx) => {
+      section.points.forEach((point, pIdx) => {
+        if (getKey(section.zone, section.sous_zone, point) === key) {
+          const radio = document.querySelector(`input[name="conformite_${sIdx}_${pIdx}"][value="${c.conformite}"]`);
+          if (radio) {
+            radio.checked = true;
+            const pointEl = radio.closest('.point-controle');
+            pointEl.classList.remove('point-c', 'point-nc', 'point-na');
+            pointEl.classList.add(`point-${c.conformite.toLowerCase()}`);
+            if (c.conformite === 'NC') {
+              const ncDetails = document.getElementById(`nc_${sIdx}_${pIdx}`);
+              if (ncDetails) ncDetails.style.display = 'block';
+              const obsEl = document.getElementById(`obs_${sIdx}_${pIdx}`);
+              if (obsEl && c.observation) obsEl.value = c.observation;
+            }
+          }
+        }
+      });
+    });
+  });
+  updateProgress();
+  unlockRestoredSections();
+}
+
+function checkAndUnlockNext(sIdx) {
+  const ficheStructure = getFicheStructure(currentTypeVol);
+  const section = ficheStructure[sIdx];
+  if (!section) return;
+
+  const allDone = section.points.every(point =>
+    !!controles[getKey(section.zone, section.sous_zone, point)]?.conformite
+  );
+  if (!allDone) return;
+
+  const cards = document.querySelectorAll('#ficheAccordion .accordion-card');
+  const nextIdx = sIdx + 1;
+
+  if (nextIdx < ficheStructure.length) {
+    const nextCard = cards[nextIdx];
+    if (nextCard && nextCard.classList.contains('section-locked')) {
+      nextCard.classList.remove('section-locked');
+      const nextHeader = nextCard.querySelector('.accordion-header');
+      nextHeader?.querySelector('.section-lock-icon')?.remove();
+      const nextBody = nextCard.querySelector('.accordion-body');
+      if (nextBody && !nextBody.classList.contains('open')) {
+        nextBody.classList.add('open');
+        if (nextHeader) nextHeader.querySelector('.accordion-arrow').textContent = '▲';
+      }
+      nextCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  } else {
+    // Dernière section fiche terminée → déverrouiller matériel
+    const materielCard = document.getElementById('sectionMateriel');
+    if (materielCard && materielCard.classList.contains('section-locked')) {
+      materielCard.classList.remove('section-locked');
+      const materielBody = document.getElementById('accordionMateriel');
+      if (materielBody && !materielBody.classList.contains('open')) {
+        materielBody.classList.add('open');
+        const arrow = materielCard.querySelector('.accordion-arrow');
+        if (arrow) arrow.textContent = '▲';
+      }
+      materielCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+}
+
+function unlockRestoredSections() {
+  const ficheStructure = getFicheStructure(currentTypeVol);
+  const cards = document.querySelectorAll('#ficheAccordion .accordion-card');
+
+  for (let i = 1; i < ficheStructure.length; i++) {
+    const prev = ficheStructure[i - 1];
+    const prevDone = prev.points.every(p =>
+      !!controles[getKey(prev.zone, prev.sous_zone, p)]?.conformite
+    );
+    if (!prevDone) break;
+    if (cards[i]) {
+      cards[i].classList.remove('section-locked');
+      cards[i].querySelector('.section-lock-icon')?.remove();
+    }
+  }
+
+  const allFicheDone = ficheStructure.every(s =>
+    s.points.every(p => !!controles[getKey(s.zone, s.sous_zone, p)]?.conformite)
+  );
+  if (allFicheDone) {
+    document.getElementById('sectionMateriel')?.classList.remove('section-locked');
+  }
+}
+
+async function loadExistingControles() {
+  if (!currentVolId) return;
+
+  if (isDemoMode) {
+    const data = demoGetControles(currentVolId);
+    data.forEach(c => {
+      const key = getKey(c.zone, c.sous_zone, c.point_controle);
+      controles[key] = { conformite: c.conformite, observation: c.observation, controle_id: c.id, zone: c.zone, sous_zone: c.sous_zone, point: c.point_controle };
+    });
+    restoreConformites();
+    return;
+  }
+
+  const { data } = await supabase.from('controles').select('*').eq('vol_id', currentVolId);
+  if (!data) return;
+  data.forEach(c => {
+    const key = getKey(c.zone, c.sous_zone, c.point_controle);
+    controles[key] = { conformite: c.conformite, observation: c.observation, controle_id: c.id, zone: c.zone, sous_zone: c.sous_zone, point: c.point_controle };
+  });
+  restoreConformites();
+}
+
+// ---- BADGE EN COURS ----
+
+async function updateBadgeEnCours() {
+  const badge = document.getElementById('badgeEnCours');
+
+  if (isDemoMode) {
+    const count = demoGetVols('demo').filter(v => v.statut === 'en_cours').length;
+    if (count > 0) { badge.textContent = count; badge.style.display = 'inline-block'; }
+    else badge.style.display = 'none';
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('vols')
+    .select('id')
+    .eq('agent_id', currentUser?.id)
+    .eq('statut', 'en_cours');
+
+  if (!error && data && data.length > 0) {
+    badge.textContent = data.length;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ---- OFFLINE ----
+
+function setupOfflineDetection() {
+  window.addEventListener('offline', () => {
+    isOffline = true;
+    document.getElementById('offlineBanner').style.display = 'block';
+  });
+  window.addEventListener('online', async () => {
+    isOffline = false;
+    document.getElementById('offlineBanner').style.display = 'none';
+    await syncOfflineData();
+  });
+}
+
+function saveToLocalStorage() {
+  if (!currentVolId) return;
+  localStorage.setItem(`offline_${currentVolId}`, JSON.stringify(controles));
+}
+
+async function syncOfflineData() {
+  if (isDemoMode) return;
+
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('offline_')) {
+      const volId = key.replace('offline_', '');
+      const data = JSON.parse(localStorage.getItem(key) || '{}');
+      for (const [cKey, c] of Object.entries(data)) {
+        if (!c.conformite) continue;
+        await supabase.from('controles').upsert({
+          vol_id: volId,
+          zone: c.zone,
+          sous_zone: c.sous_zone || null,
+          point_controle: c.point,
+          conformite: c.conformite,
+          observation: c.observation || null
+        }, { onConflict: 'vol_id,zone,sous_zone,point_controle' });
+      }
+      localStorage.removeItem(key);
+    }
+  }
+  showToast('Données synchronisées ✓', 'success');
+}
+
+// ---- MODAL FERMETURE ----
+
+document.getElementById('btnCloseFiche')?.addEventListener('click', () => {
+  document.getElementById('modalFiche').style.display = 'none';
+});
+document.getElementById('btnFermerFiche')?.addEventListener('click', () => {
+  document.getElementById('modalFiche').style.display = 'none';
+});
+
+// ---- LIGHTBOX ----
+
+window.openLightbox = function(url) {
+  document.getElementById('lightboxImg').src = url;
+  document.getElementById('lightbox').style.display = 'flex';
+};
+document.getElementById('lightboxClose')?.addEventListener('click', () => {
+  document.getElementById('lightbox').style.display = 'none';
+});
+document.getElementById('lightboxOverlay')?.addEventListener('click', () => {
+  document.getElementById('lightbox').style.display = 'none';
+});
+
+// ---- DÉMARRAGE ----
+
+init();
+
+// ---- GÉNÉRATION PDF FICHE ----
+
+// Liste maître des matériels (même ordre que l'UI)
+const MATERIEL_MASTER = {
+  'Seaux toilettes': ['Torchon rouge','Chamoisine','Brosse de toilette','Serpillière','Eau javel','Netal 20/50'],
+  'Seaux galley':    ['Torchon vert','Serpillière','Brosse galley','Decap four','Netal 20/50','Palette courte avec brosse'],
+  'Seaux cabine':    ['Torchon bleu','Decap four','Brosse bay bay','Brosse tapis','Naga gumm','Nettoyant écran']
+};
+
+function loadImageBase64(url) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX = 1200;
+      let w = img.naturalWidth || img.width;
+      let h = img.naturalHeight || img.height;
+      if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve({ b64: canvas.toDataURL('image/jpeg', 0.8), w, h });
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+function loadLogoBase64() {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      c.getContext('2d').drawImage(img, 0, 0);
+      resolve(c.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(null);
+    img.src = 'images/logo.png';
+  });
+}
+
+async function downloadFichePDF(volId, typeVol) {
+  showToast('Génération du PDF…', 'info');
+
+  try {
+    if (volId === currentVolId) await flushSaves();
+
+    const [{ data: vol }, { data: ctrl }, { data: mats }, { data: photos }, logoB64] = await Promise.all([
+      supabase.from('vols').select('*, profiles(nom)').eq('id', volId).single(),
+      supabase.from('controles').select('*').eq('vol_id', volId),
+      supabase.from('materiels_utilises').select('*').eq('vol_id', volId),
+      supabase.from('photos').select('*').eq('vol_id', volId),
+      loadLogoBase64()
+    ]);
+
+    if (!vol) { showToast('Impossible de charger les données', 'error'); return; }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    const W = 210, M = 10;
+    const colW = W - 2 * M;
+
+    const RED   = [190, 30, 45];
+    const DKRED = [140, 20, 30];
+    const GREY  = [245, 245, 245];
+    const DGREY = [220, 220, 220];
+    const BLACK = [30, 30, 30];
+    const GREEN = [16, 185, 129];
+
+    const ctrlMap = {};
+    (ctrl || []).forEach(c => {
+      ctrlMap[`${c.zone}|${c.sous_zone || ''}|${c.point_controle}`] = c;
+    });
+
+    // Photos par controle_id
+    const photosMap = {};
+    (photos || []).forEach(p => {
+      if (p.controle_id) {
+        if (!photosMap[p.controle_id]) photosMap[p.controle_id] = [];
+        photosMap[p.controle_id].push(p);
+      }
+    });
+
+    // Pré-chargement des images NC en base64
+    const ncPhotoImgs = {};
+    for (const c of (ctrl || [])) {
+      if (c.conformite === 'NC') {
+        const ps = photosMap[c.id] || [];
+        if (ps.length > 0) {
+          const loaded = await Promise.all(ps.map(p => loadImageBase64(p.url_publique)));
+          ncPhotoImgs[c.id] = loaded.filter(Boolean);
+        }
+      }
+    }
+
+    // Set des matériels cochés (utilise=true)
+    const matsChecked = new Set(
+      (mats || []).filter(m => m.utilise).map(m => `${m.categorie}|${m.nom_materiel}`)
+    );
+
+    const structure = getFicheStructure(typeVol);
+    let y = M;
+
+    // ── BANDEAU TITRE ──────────────────────────────────────────
+    const headerH = 16;
+    doc.setFillColor(...RED);
+    doc.rect(M, y, colW, headerH, 'F');
+
+    if (logoB64) {
+      // Logo à gauche, proportionnel (hauteur max 13mm)
+      const logoH = 13, logoW = 38;
+      doc.addImage(logoB64, 'PNG', M + 3, y + 1.5, logoW, logoH);
+    } else {
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('RAM HANDLING', M + 4, y + 9);
+    }
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(typeVol, W - M - 2, y + 7, { align: 'right' });
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Fiche de Contrôle Cabine', W - M - 2, y + 13, { align: 'right' });
+    y += headerH + 3;
+
+    // ── LIGNE INFO VOL ─────────────────────────────────────────
+    const fields = [
+      { label: 'Date',            value: vol.date_vol || '—' },
+      { label: 'N° Vol',          value: vol.numero_vol || '—' },
+      { label: 'Immatriculation', value: vol.immatriculation || '—' },
+      { label: 'Début',           value: vol.heure_debut || '—' },
+      { label: 'Fin',             value: vol.heure_fin || '—' },
+      { label: 'Agent',           value: vol.profiles?.nom || '—' }
+    ];
+    const fw = colW / fields.length;
+    fields.forEach((f, i) => {
+      const x = M + i * fw;
+      doc.setFillColor(...DGREY);
+      doc.rect(x, y, fw, 5, 'F');
+      doc.setTextColor(...BLACK);
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'bold');
+      doc.text(f.label, x + fw / 2, y + 3.5, { align: 'center' });
+      doc.setFillColor(255, 255, 255);
+      doc.rect(x, y + 5, fw, 6, 'F');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text(String(f.value), x + fw / 2, y + 9, { align: 'center' });
+    });
+    doc.setDrawColor(200, 200, 200);
+    doc.rect(M, y, colW, 11, 'S');
+    for (let i = 1; i < fields.length; i++) doc.line(M + i * fw, y, M + i * fw, y + 11);
+    y += 14;
+
+    // ── ZONES D'INSPECTION ─────────────────────────────────────
+    const parties = [];
+    let lastPartie = null;
+    structure.forEach(sec => {
+      const partieLabel = sec.partie === 'Client'
+        ? 'PARTIE CLIENT'
+        : sec.partie === 'Équipage'
+          ? `PARTIE ÉQUIPAGE – ${sec.zone}${sec.sous_zone ? ' ' + sec.sous_zone : ''}`
+          : sec.zone;
+      if (partieLabel !== lastPartie) { parties.push({ label: partieLabel, sections: [] }); lastPartie = partieLabel; }
+      parties[parties.length - 1].sections.push(sec);
+    });
+
+    const colZone  = 25;
+    const colPoint = 72;
+    const colConf  = 22;
+    const colNbr   = 22;
+    const colObs   = colW - colZone - colPoint - colConf - colNbr;
+    const PAGE_H = 297, FOOTER_MARGIN = 15;
+
+    function checkPageBreak(needed) {
+      if (y + needed > PAGE_H - FOOTER_MARGIN) { doc.addPage(); y = M; }
+    }
+
+    function drawSectionHeader(label) {
+      checkPageBreak(7);
+      doc.setFillColor(...DKRED);
+      doc.rect(M, y, colW, 6, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.text(label, M + colW / 2, y + 4, { align: 'center' });
+      y += 6;
+    }
+
+    function drawTableHeader() {
+      checkPageBreak(6);
+      doc.setFillColor(...GREY);
+      doc.rect(M, y, colW, 5.5, 'F');
+      doc.setDrawColor(200, 200, 200);
+      doc.setTextColor(...BLACK);
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'bold');
+      let x = M;
+      doc.text('Zone',               x + colZone / 2,  y + 3.8, { align: 'center' }); x += colZone;
+      doc.text('Point de contrôle',  x + colPoint / 2, y + 3.8, { align: 'center' }); x += colPoint;
+      doc.text('Conforme',            x + colConf / 2,  y + 3.8, { align: 'center' }); x += colConf;
+      doc.text('Non Conforme',       x + colNbr / 2,   y + 3.8, { align: 'center' }); x += colNbr;
+      doc.text('Observations',       x + colObs / 2,   y + 3.8, { align: 'center' });
+      y += 5.5;
+    }
+
+    function drawRow(zoneName, point, conf, obs, isShaded) {
+      const rowH = 6;
+      checkPageBreak(rowH);
+      if (isShaded) { doc.setFillColor(...GREY); doc.rect(M, y, colW, rowH, 'F'); }
+      doc.setDrawColor(220, 220, 220);
+      doc.rect(M, y, colW, rowH, 'S');
+      doc.setTextColor(...BLACK);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'normal');
+
+      let x = M;
+      // Zone
+      doc.text(zoneName, x + 2, y + 4);
+      doc.line(x + colZone, y, x + colZone, y + rowH); x += colZone;
+      // Point
+      doc.text(doc.splitTextToSize(point, colPoint - 3)[0], x + 2, y + 4);
+      doc.line(x + colPoint, y, x + colPoint, y + rowH); x += colPoint;
+      // N conforme (C)
+      if (conf === 'C') {
+        doc.setTextColor(...GREEN); doc.setFont('helvetica', 'bold');
+        doc.text('C', x + colConf / 2, y + 4, { align: 'center' });
+      } else if (conf === 'NC') {
+        doc.setTextColor(180, 180, 180); doc.setFont('helvetica', 'normal');
+        doc.text('—', x + colConf / 2, y + 4, { align: 'center' });
+      } else {
+        doc.setTextColor(200, 200, 200);
+        doc.text('—', x + colConf / 2, y + 4, { align: 'center' });
+      }
+      doc.setTextColor(...BLACK); doc.setFont('helvetica', 'normal');
+      doc.line(x + colConf, y, x + colConf, y + rowH); x += colConf;
+      // N/C non conforme (NC)
+      if (conf === 'NC') {
+        doc.setTextColor(239, 68, 68); doc.setFont('helvetica', 'bold');
+        doc.text('NC', x + colNbr / 2, y + 4, { align: 'center' });
+      } else if (conf === 'C') {
+        doc.setTextColor(180, 180, 180); doc.setFont('helvetica', 'normal');
+        doc.text('—', x + colNbr / 2, y + 4, { align: 'center' });
+      } else {
+        doc.setTextColor(200, 200, 200);
+        doc.text('—', x + colNbr / 2, y + 4, { align: 'center' });
+      }
+      doc.setTextColor(...BLACK); doc.setFont('helvetica', 'normal');
+      doc.line(x + colNbr, y, x + colNbr, y + rowH); x += colNbr;
+      // Observations
+      if (obs) { doc.setFontSize(6.5); doc.text(doc.splitTextToSize(obs, colObs - 3)[0], x + 2, y + 4); }
+      y += rowH;
+    }
+
+    parties.forEach(partie => {
+      drawSectionHeader(partie.label);
+      drawTableHeader();
+      partie.sections.forEach(sec => {
+        sec.points.forEach((point, idx) => {
+          const c = ctrlMap[`${sec.zone}|${sec.sous_zone || ''}|${point}`];
+          drawRow(
+            idx === 0 ? (sec.sous_zone ? `${sec.zone} (${sec.sous_zone})` : sec.zone) : '',
+            point, c?.conformite || '', c?.observation || '', idx % 2 === 1
+          );
+        });
+      });
+      y += 2;
+    });
+
+    // ── MATÉRIEL UTILISÉ ───────────────────────────────────────
+    checkPageBreak(8);
+    doc.setFillColor(...DKRED);
+    doc.rect(M, y, colW, 6, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Matériel utilisé', M + colW / 2, y + 4, { align: 'center' });
+    y += 7;
+
+    // Aspirateurs + Agents
+    const aspRow    = (mats || []).find(m => m.categorie === 'Nombre aspirateurs');
+    const aspQty    = aspRow ? aspRow.quantite : 0;
+    const agentsRow = (mats || []).find(m => m.categorie === 'Nombre agents');
+    const agentsQty = agentsRow ? agentsRow.quantite : 0;
+    checkPageBreak(6);
+    doc.setFillColor(...GREY);
+    doc.rect(M, y, colW, 5.5, 'F');
+    doc.setTextColor(...BLACK);
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Nombre aspirateurs : ${aspQty}`, M + 4, y + 3.8);
+    doc.text(`Nombre agents : ${agentsQty}`, M + colW / 2 + 4, y + 3.8);
+    y += 7;
+
+    // Catégories — afficher TOUS les items, cochés en vert, non cochés en gris
+    const categories = Object.keys(MATERIEL_MASTER);
+    const catCols = Math.floor(colW / categories.length);
+    const startY = y;
+    let maxRowY = startY;
+
+    categories.forEach((cat, ci) => {
+      const allItems = MATERIEL_MASTER[cat];
+      const x = M + ci * catCols;
+      checkPageBreak(6 + allItems.length * 5);
+
+      doc.setFillColor(...DGREY);
+      doc.rect(x, startY, catCols, 5.5, 'F');
+      doc.setTextColor(...BLACK);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.text(cat, x + catCols / 2, startY + 3.8, { align: 'center' });
+
+      let rowY = startY + 5.5;
+      allItems.forEach((nom, mi) => {
+        const checked = matsChecked.has(`${cat}|${nom}`);
+        if (mi % 2 === 0) doc.setFillColor(252, 252, 252); else doc.setFillColor(...GREY);
+        doc.rect(x, rowY, catCols, 5, 'F');
+
+        if (checked) {
+          // Cercle vert + texte noir gras
+          doc.setFillColor(...GREEN);
+          doc.circle(x + 4.5, rowY + 2.5, 1.8, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(6);
+          doc.setFont('helvetica', 'bold');
+          doc.text('✓', x + 4.5, rowY + 3.1, { align: 'center' });
+          doc.setTextColor(...BLACK);
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'bold');
+          doc.text(nom, x + 8, rowY + 3.4);
+        } else {
+          // Cercle vide gris + texte gris clair
+          doc.setDrawColor(200, 200, 200);
+          doc.circle(x + 4.5, rowY + 2.5, 1.8, 'S');
+          doc.setTextColor(180, 180, 180);
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'normal');
+          doc.text(nom, x + 8, rowY + 3.4);
+        }
+        rowY += 5;
+        if (rowY > maxRowY) maxRowY = rowY;
+      });
+    });
+    y = maxRowY + 3;
+
+    // ── ANNEXE PHOTOS DES ANOMALIES ────────────────────────────
+    const ncWithPhotos = (ctrl || []).filter(c =>
+      c.conformite === 'NC' && (ncPhotoImgs[c.id] || []).length > 0
+    );
+
+    if (ncWithPhotos.length > 0) {
+      checkPageBreak(10);
+      doc.setFillColor(...RED);
+      doc.rect(M, y, colW, 6, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Annexe – Photos des anomalies', M + colW / 2, y + 4, { align: 'center' });
+      y += 8;
+
+      structure.forEach(sec => {
+        sec.points.forEach(point => {
+          const cKey = `${sec.zone}|${sec.sous_zone || ''}|${point}`;
+          const c = ctrlMap[cKey];
+          if (!c || c.conformite !== 'NC') return;
+          const imgs = ncPhotoImgs[c.id] || [];
+          if (!imgs.length) return;
+
+          const sectionLabel = sec.sous_zone ? `${sec.zone} – ${sec.sous_zone}` : sec.zone;
+
+          // En-tête de l'anomalie
+          checkPageBreak(12);
+          doc.setFillColor(255, 240, 240);
+          doc.rect(M, y, colW, 7, 'F');
+          doc.setDrawColor(...RED);
+          doc.rect(M, y, colW, 7, 'S');
+          doc.setTextColor(...RED);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          const anomTitle = `${sectionLabel}  —  ${point}`;
+          doc.text(anomTitle, M + 3, y + 4.5);
+          y += 7;
+
+          if (c.observation) {
+            checkPageBreak(6);
+            doc.setFillColor(255, 248, 248);
+            doc.rect(M, y, colW, 5, 'F');
+            doc.setTextColor(100, 100, 100);
+            doc.setFontSize(6.5);
+            doc.setFont('helvetica', 'italic');
+            doc.text(`Obs : ${doc.splitTextToSize(c.observation, colW - 6)[0]}`, M + 3, y + 3.5);
+            y += 5;
+          }
+
+          // Photos — 2 par ligne
+          const photoW = (colW - 4) / 2;
+          const photoMaxH = 65;
+
+          for (let i = 0; i < imgs.length; i += 2) {
+            const rowImgs = [imgs[i], imgs[i + 1]].filter(Boolean);
+            let rowH = 0;
+            rowImgs.forEach(imgData => {
+              const iH = Math.min(photoW / (imgData.w / imgData.h), photoMaxH);
+              if (iH > rowH) rowH = iH;
+            });
+
+            checkPageBreak(rowH + 6);
+            rowImgs.forEach((imgData, col) => {
+              const x = M + col * (photoW + 4);
+              const aspect = imgData.w / imgData.h;
+              let iW = photoW, iH = photoW / aspect;
+              if (iH > photoMaxH) { iH = photoMaxH; iW = photoMaxH * aspect; }
+              doc.addImage(imgData.b64, 'JPEG', x, y, iW, iH);
+              doc.setDrawColor(200, 200, 200);
+              doc.rect(x, y, iW, iH, 'S');
+              // Numéro de photo
+              doc.setFontSize(6);
+              doc.setTextColor(150, 150, 150);
+              doc.setFont('helvetica', 'normal');
+              doc.text(`Photo ${i + col + 1}`, x + 1, y + iH - 1);
+            });
+            y += rowH + 4;
+          }
+          y += 4;
+        });
+      });
+    }
+
+    // ── PIED DE PAGE ───────────────────────────────────────────
+    const pageCount = doc.getNumberOfPages();
+    for (let p = 1; p <= pageCount; p++) {
+      doc.setPage(p);
+      doc.setDrawColor(...DGREY);
+      doc.line(M, 285, W - M, 285);
+      doc.setFontSize(7);
+      doc.setTextColor(160, 160, 160);
+      doc.setFont('helvetica', 'normal');
+      doc.text('RAM HANDLING – Contrôle Cabine', M, 290);
+      doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, W - M, 290, { align: 'right' });
+      doc.text(`Page ${p}/${pageCount}`, W / 2, 290, { align: 'center' });
+    }
+
+    const filename = `Fiche_${vol.numero_vol}_${vol.date_vol}.pdf`.replace(/\//g, '-');
+    doc.save(filename);
+    showToast('PDF téléchargé ✓', 'success');
+
+  } catch (err) {
+    console.error(err);
+    showToast('Erreur lors de la génération PDF', 'error');
+  }
+}

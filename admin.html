@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin – Contrôle Cabines</title>
+  <link rel="icon" type="image/png" href="images/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="app-body">
+
+  <!-- TOPBAR -->
+  <header class="topbar" id="topbar">
+    <div class="topbar-left">
+      <button class="btn-menu" id="btnMenu" aria-label="Menu"><i class="fas fa-bars"></i></button>
+      <span class="topbar-page-title" id="topbarTitle">Tableau de bord</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn-notif" aria-label="Notifications"><i class="fas fa-bell"></i></button>
+      <span class="topbar-username" id="adminNomTopbar">…</span>
+      <div class="topbar-avatar" style="background:#f59e0b;" id="topbarAvatar">CD</div>
+      <button class="btn btn-outline btn-sm" id="btnLogout">
+        <i class="fas fa-right-from-bracket"></i> Déconnexion
+      </button>
+    </div>
+  </header>
+
+  <!-- LAYOUT -->
+  <div class="app-layout">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <!-- Logo RAM Handling -->
+      <div class="sidebar-brand">
+        <div class="sidebar-logo-box">
+          <img src="images/logo.png" alt="RAM Handling"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='block';" />
+          <span class="sidebar-logo-fallback">RAM<br>HANDLING</span>
+        </div>
+      </div>
+
+      <!-- User info -->
+      <div class="sidebar-user-section">
+        <div class="sidebar-user-avatar" style="background:#f59e0b;" id="sidebarAvatar">CD</div>
+        <div class="sidebar-user-info">
+          <span class="sidebar-user-name" id="adminNom">…</span>
+          <span class="sidebar-user-status" id="sidebarUserRole">…</span>
+        </div>
+      </div>
+
+      <!-- Navigation -->
+      <div class="sidebar-section-label">GLOBAL</div>
+      <nav class="sidebar-nav">
+        <a href="#" class="sidebar-link active" data-view="dashboard">
+          <span class="sidebar-icon"><i class="fas fa-chart-bar"></i></span>
+          <span>Tableau de bord</span>
+        </a>
+        <a href="#" class="sidebar-link" data-view="controles">
+          <span class="sidebar-icon"><i class="fas fa-list-check"></i></span>
+          <span>Tous les contrôles</span>
+        </a>
+        <a href="#" class="sidebar-link" data-view="par-agent">
+          <span class="sidebar-icon"><i class="fas fa-user"></i></span>
+          <span>Par agent</span>
+        </a>
+        <a href="#" class="sidebar-link" data-view="nc">
+          <span class="sidebar-icon"><i class="fas fa-triangle-exclamation"></i></span>
+          <span>Non-conformités</span>
+        </a>
+        <a href="#" class="sidebar-link" data-view="agents" id="navAgents">
+          <span class="sidebar-icon"><i class="fas fa-users"></i></span>
+          <span>Gestion utilisateurs</span>
+        </a>
+        <a href="#" class="sidebar-link" data-view="export">
+          <span class="sidebar-icon"><i class="fas fa-download"></i></span>
+          <span>Export</span>
+        </a>
+      </nav>
+
+      <!-- Analyses -->
+      <div class="sidebar-section-label" style="margin-top:.5rem;">ANALYSES</div>
+      <nav class="sidebar-nav">
+        <a href="#" class="sidebar-link" data-view="analyse-mp">
+          <span class="sidebar-icon"><i class="fas fa-chart-line"></i></span>
+          <span>Moyen-Porteur</span>
+        </a>
+        <a href="#" class="sidebar-link" data-view="analyse-gp">
+          <span class="sidebar-icon"><i class="fas fa-chart-line"></i></span>
+          <span>Gros-Porteur</span>
+        </a>
+      </nav>
+
+      <!-- Footer email -->
+      <div class="sidebar-footer-email">
+        <i class="fas fa-envelope"></i>
+        ALBOUJRADA@ramhandling.com
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main-content" id="mainContent">
+
+      <!-- ======== TABLEAU DE BORD ======== -->
+      <div id="viewDashboard" class="view active">
+        <div class="page-title"><h2>📊 Tableau de bord</h2></div>
+
+        <!-- Filtres dashboard -->
+        <div class="db-filters">
+          <div class="db-filter-group">
+            <span class="db-filter-label">Période</span>
+            <div class="db-pills">
+              <button class="db-pill active" data-filter="period" data-value="30">30 jours</button>
+              <button class="db-pill" data-filter="period" data-value="7">7 jours</button>
+              <button class="db-pill" data-filter="period" data-value="today">Aujourd'hui</button>
+              <button class="db-pill" data-filter="period" data-value="all">Tout</button>
+            </div>
+          </div>
+          <div class="db-filter-group">
+            <span class="db-filter-label">Type</span>
+            <div class="db-pills">
+              <button class="db-pill active" data-filter="typeVol" data-value="">Tous</button>
+              <button class="db-pill" data-filter="typeVol" data-value="MP">MP</button>
+              <button class="db-pill" data-filter="typeVol" data-value="GP">GP</button>
+            </div>
+          </div>
+          <div class="db-filter-group">
+            <span class="db-filter-label">Agent</span>
+            <select id="dbFilterAgent" class="db-select"><option value="">Tous les agents</option></select>
+          </div>
+        </div>
+
+        <!-- Cartes stats -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon">✈</div>
+            <div class="stat-body">
+              <div class="stat-value" id="statTotalVols">—</div>
+              <div class="stat-label">Total vols contrôlés</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">📅</div>
+            <div class="stat-body">
+              <div class="stat-value" id="statAujourd">—</div>
+              <div class="stat-label">Vols aujourd'hui</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">📈</div>
+            <div class="stat-body">
+              <div class="stat-value" id="statTaux">—</div>
+              <div class="stat-label">Taux conformité global</div>
+            </div>
+          </div>
+          <div class="stat-card stat-card-alert">
+            <div class="stat-icon">⚠</div>
+            <div class="stat-body">
+              <div class="stat-value" id="statNcTotal">—</div>
+              <div class="stat-label">NC en attente</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Graphiques -->
+        <div class="charts-grid">
+          <div class="card chart-card">
+            <div class="card-header"><h3>Vols par agent</h3></div>
+            <div class="card-body" id="chartVolsParAgent">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-header"><h3>Conformité par zone</h3></div>
+            <div class="card-body" id="chartConformiteZone">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+          <div class="card chart-card chart-card-wide">
+            <div class="card-header"><h3 id="chartEvolutionTitle">Évolution (30 derniers jours)</h3></div>
+            <div class="card-body" id="chartEvolution">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Graphiques secondaires ligne 1 : Donut conformité + Statut des vols -->
+        <div class="charts-grid">
+          <div class="card chart-card">
+            <div class="card-header"><h3>Répartition C / NC</h3></div>
+            <div class="card-body" id="chartDonutConformite">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-header"><h3>Statut des vols</h3></div>
+            <div class="card-body" id="chartStatuts">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Graphiques secondaires ligne 2 : MP vs GP + Compagnies -->
+        <div class="charts-grid">
+          <div class="card chart-card">
+            <div class="card-header"><h3>Taux conformité MP vs GP</h3></div>
+            <div class="card-body" id="chartTypeVol">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-header"><h3>Vols par compagnie</h3></div>
+            <div class="card-body" id="chartCompagnies">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Top NC -->
+        <div class="card">
+          <div class="card-header"><h3>🔴 Top 10 non-conformités</h3></div>
+          <div class="card-body">
+            <div id="topNcTable" class="table-responsive">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activité récente realtime -->
+        <div class="card">
+          <div class="card-header">
+            <h3>🔴 Activité récente <span class="live-dot">●</span> Live</h3>
+          </div>
+          <div class="card-body">
+            <div id="activiteRecente">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======== TOUS LES CONTRÔLES ======== -->
+      <div id="viewControles" class="view" style="display:none;">
+        <div class="page-title"><h2>📋 Tous les contrôles</h2></div>
+
+        <!-- Filtres -->
+        <div class="card filters-card">
+          <div class="filters-row">
+            <div class="form-group form-group-inline">
+              <label>Agent</label>
+              <select id="filterAgent"><option value="">Tous</option></select>
+            </div>
+            <div class="form-group form-group-inline">
+              <label>Du</label>
+              <input type="date" id="filterDateDe" />
+            </div>
+            <div class="form-group form-group-inline">
+              <label>Au</label>
+              <input type="date" id="filterDateA" />
+            </div>
+            <div class="form-group form-group-inline">
+              <label>Statut</label>
+              <select id="filterStatut">
+                <option value="">Tous</option>
+                <option value="en_cours">En cours</option>
+                <option value="soumis">Soumis</option>
+                <option value="validé">Validé</option>
+                <option value="rejeté">Rejeté</option>
+              </select>
+            </div>
+            <div class="form-group form-group-inline">
+              <label>Type de vol</label>
+              <select id="filterTypeVol">
+                <option value="">Tous</option>
+                <option value="Moyen Porteur Transit">Moyen Porteur Transit</option>
+                <option value="Gros Porteur Transit">Gros Porteur Transit</option>
+                <option value="Moyen Porteur Stop Cmn">Moyen Porteur Stop Cmn</option>
+                <option value="Gros Porteur Stop Cmn">Gros Porteur Stop Cmn</option>
+              </select>
+            </div>
+            <button class="btn btn-primary btn-sm" id="btnFiltrer">Filtrer</button>
+            <button class="btn btn-outline btn-sm" id="btnResetFiltres">Réinitialiser</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <div id="tousControlesTable" class="table-responsive">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======== PAR AGENT ======== -->
+      <div id="viewParAgent" class="view" style="display:none;">
+        <div class="page-title"><h2>👤 Analyse par agent</h2></div>
+        <div class="card filters-card">
+          <div class="filters-row">
+            <div class="form-group form-group-inline">
+              <label>Sélectionner un agent</label>
+              <select id="selectAgentDetail"><option value="">-- Choisir --</option></select>
+            </div>
+          </div>
+        </div>
+        <div id="agentDetailContent"></div>
+      </div>
+
+      <!-- ======== NON-CONFORMITÉS ======== -->
+      <div id="viewNC" class="view" style="display:none;">
+        <div class="page-title"><h2>❌ Non-conformités</h2></div>
+        <div class="card filters-card">
+          <div class="filters-row">
+            <div class="form-group form-group-inline">
+              <label>Zone</label>
+              <select id="filterNcZone">
+                <option value="">Toutes</option>
+                <option value="Cockpit">Cockpit</option>
+                <option value="Cabine">Cabine</option>
+                <option value="Cabine ECO">Cabine ECO</option>
+                <option value="Premium Economy">Premium Economy</option>
+                <option value="CRC">CRC (Crew Rest)</option>
+                <option value="Toilettes">Toilettes</option>
+                <option value="Galley">Galley</option>
+                <option value="Client">Client</option>
+              </select>
+            </div>
+            <div class="form-group form-group-inline">
+              <label>Agent</label>
+              <select id="filterNcAgent"><option value="">Tous</option></select>
+            </div>
+            <div class="form-group form-group-inline">
+              <label>Date</label>
+              <input type="date" id="filterNcDate" />
+            </div>
+            <button class="btn btn-primary btn-sm" id="btnFiltrerNC">Filtrer</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <div id="ncTable" class="table-responsive">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======== GESTION AGENTS ======== -->
+      <div id="viewAgents" class="view" style="display:none;">
+        <div class="page-title">
+          <h2>👥 Gestion des utilisateurs</h2>
+          <button class="btn btn-primary" id="btnAjouterAgent">+ Ajouter un utilisateur</button>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <div id="agentsTable" class="table-responsive">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======== ANALYSE MOYEN-PORTEUR ======== -->
+      <div id="viewAnalyseMP" class="view" style="display:none;">
+        <div class="rapport-toolbar">
+          <button class="btn-refresh" id="btnRefreshMP">
+            <i class="fas fa-rotate-right" id="iconRefreshMP"></i> Actualiser
+          </button>
+          <span class="rapport-last-updated" id="mpLastUpdated"></span>
+        </div>
+        <div class="rapport-page">
+
+          <!-- SECTION 01 — CADRAGE -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">01 · CADRAGE</div>
+                <h2 class="rapport-h2">Périmètre &amp; méthodologie</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">MOYEN-PORTEUR</span>
+            </div>
+
+            <!-- KPIs dynamiques -->
+            <div class="rapport-kpi-grid" id="mpKpiGrid">
+              <div class="loading-state">Chargement…</div>
+            </div>
+
+            <!-- Zones évaluées -->
+            <h3 class="rapport-subtitle">Les 5 zones évaluées</h3>
+            <div class="rapport-zones-grid rapport-zones-5">
+              <div class="rapport-zone-card"><i class="fas fa-plane rapport-zone-icon"></i><span>Cockpit</span></div>
+              <div class="rapport-zone-card"><i class="fas fa-chair rapport-zone-icon"></i><span>Cabine / Sièges</span></div>
+              <div class="rapport-zone-card"><i class="fas fa-toilet rapport-zone-icon"></i><span>Toilettes</span></div>
+              <div class="rapport-zone-card"><i class="fas fa-utensils rapport-zone-icon"></i><span>Galley / Office</span></div>
+              <div class="rapport-zone-card"><i class="fas fa-eye rapport-zone-icon"></i><span>Contrôle final / Impression</span></div>
+            </div>
+
+            <!-- Légende -->
+            <div class="rapport-legend-grid">
+              <div class="rapport-legend-card">
+                <div class="rapport-legend-icon-wrap"><i class="fas fa-circle-check" style="color:#e31837;font-size:1.5rem;"></i></div>
+                <div><strong>Échelle d'évaluation.</strong>&nbsp; Chaque point noté <strong>C</strong> (Conforme) ou <strong>NC</strong> (Non Conforme) ; chaque écart est qualifié par une remarque.</div>
+              </div>
+              <div class="rapport-legend-card rapport-legend-card-alert">
+                <div class="rapport-legend-icon-wrap"><i class="fas fa-eye" style="color:#e31837;font-size:1.5rem;"></i></div>
+                <div><strong>« Contrôle final » — aspect client.</strong>&nbsp; Vérification globale du point de vue passager (propreté d'ensemble, odeurs, hublots, déchets) : le verdict d'acceptation de la cabine juste avant l'embarquement.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 03 — PERFORMANCE GLOBALE MP -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">03 · VUE D'ENSEMBLE</div>
+                <h2 class="rapport-h2">Performance globale de propreté</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">MOYEN-PORTEUR</span>
+            </div>
+            <div class="rapport-perf-grid" id="mpPerfGrid">
+              <div class="loading-state">Chargement…</div>
+            </div>
+            <div id="mpLectureCard"></div>
+          </div>
+
+          <!-- SECTION 04 — ANALYSE PAR ZONE MP -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">04 · ANALYSE PAR ZONE</div>
+                <h2 class="rapport-h2">Conformité par zone de l'appareil</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">MOYEN-PORTEUR</span>
+            </div>
+            <div id="mpZoneChart">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+
+          <!-- SECTION 05 — TOP POINTS NC MP -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">05 · POINTS CRITIQUES</div>
+                <h2 class="rapport-h2">Top des points de non-conformité</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">MOYEN-PORTEUR</span>
+            </div>
+            <div id="mpTopPoints">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+
+          <!-- SECTION 06 — TYPOLOGIE MP -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">06 · NATURE DES ÉCARTS</div>
+                <h2 class="rapport-h2">Typologie des défauts constatés</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">MOYEN-PORTEUR</span>
+            </div>
+            <div id="mpTypologie">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+
+          <!-- SECTION 07 — ÉVOLUTION MENSUELLE MP -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">07 · TENDANCE</div>
+                <h2 class="rapport-h2">Évolution mensuelle de l'activité &amp; qualité</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">MOYEN-PORTEUR</span>
+            </div>
+            <div id="mpEvolution">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+
+          <!-- SECTION 08 — CONTRÔLEURS MP -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">08 · TERRAIN</div>
+                <h2 class="rapport-h2">Activité des contrôleurs</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">MOYEN-PORTEUR</span>
+            </div>
+            <div id="mpControleurs">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ======== ANALYSE GROS-PORTEUR ======== -->
+      <div id="viewAnalyseGP" class="view" style="display:none;">
+        <div class="rapport-toolbar">
+          <button class="btn-refresh" id="btnRefreshGP">
+            <i class="fas fa-rotate-right" id="iconRefreshGP"></i> Actualiser
+          </button>
+          <span class="rapport-last-updated" id="gpLastUpdated"></span>
+        </div>
+        <div class="rapport-page">
+
+          <!-- SECTION 01 — CADRAGE -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">01 · CADRAGE</div>
+                <h2 class="rapport-h2">Périmètre &amp; méthodologie</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">GROS-PORTEUR</span>
+            </div>
+
+            <!-- KPIs dynamiques -->
+            <div class="rapport-kpi-grid" id="gpKpiGrid">
+              <div class="loading-state">Chargement…</div>
+            </div>
+
+            <!-- Zones évaluées -->
+            <h3 class="rapport-subtitle">Les 7 zones évaluées</h3>
+            <div class="rapport-zones-grid rapport-zones-7">
+              <div class="rapport-zone-card"><i class="fas fa-plane rapport-zone-icon"></i><span>Cockpit</span></div>
+              <div class="rapport-zone-card"><i class="fas fa-chair rapport-zone-icon"></i><span>Cabine / Sièges</span></div>
+              <div class="rapport-zone-card"><i class="fas fa-star rapport-zone-icon"></i><span>Premium Economy</span></div>
+              <div class="rapport-zone-card"><i class="fas fa-bed rapport-zone-icon"></i><span>Crew Rest (CRC)</span></div>
+              <div class="rapport-zone-card"><i class="fas fa-toilet rapport-zone-icon"></i><span>Toilettes</span></div>
+              <div class="rapport-zone-card"><i class="fas fa-utensils rapport-zone-icon"></i><span>Galley / Office</span></div>
+              <div class="rapport-zone-card"><i class="fas fa-eye rapport-zone-icon"></i><span>Contrôle final / Impression</span></div>
+            </div>
+
+            <!-- Légende -->
+            <div class="rapport-legend-grid">
+              <div class="rapport-legend-card">
+                <div class="rapport-legend-icon-wrap"><i class="fas fa-circle-check" style="color:#e31837;font-size:1.5rem;"></i></div>
+                <div><strong>Échelle d'évaluation.</strong>&nbsp; Chaque point noté <strong>C</strong> (Conforme) ou <strong>NC</strong> (Non Conforme) ; chaque écart est qualifié par une remarque.</div>
+              </div>
+              <div class="rapport-legend-card rapport-legend-card-alert">
+                <div class="rapport-legend-icon-wrap"><i class="fas fa-bed" style="color:#e31837;font-size:1.5rem;"></i></div>
+                <div><strong>CRC — Crew Rest Compartment.</strong>&nbsp; Zone de repos équipage (PNT avant / PNC arrière) : contrôle spécifique aux vols long-courriers Gros-Porteur.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 03 — PERFORMANCE GLOBALE GP -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">03 · VUE D'ENSEMBLE</div>
+                <h2 class="rapport-h2">Performance globale de propreté</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">GROS-PORTEUR</span>
+            </div>
+            <div class="rapport-perf-grid" id="gpPerfGrid">
+              <div class="loading-state">Chargement…</div>
+            </div>
+            <div id="gpLectureCard"></div>
+          </div>
+
+          <!-- SECTION 04 — ANALYSE PAR ZONE GP -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">04 · ANALYSE PAR ZONE</div>
+                <h2 class="rapport-h2">Conformité par zone de l'appareil</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">GROS-PORTEUR</span>
+            </div>
+            <div id="gpZoneChart">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+
+          <!-- SECTION 05 — TOP POINTS NC GP -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">05 · POINTS CRITIQUES</div>
+                <h2 class="rapport-h2">Top des points de non-conformité</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">GROS-PORTEUR</span>
+            </div>
+            <div id="gpTopPoints">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+
+          <!-- SECTION 06 — TYPOLOGIE GP -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">06 · NATURE DES ÉCARTS</div>
+                <h2 class="rapport-h2">Typologie des défauts constatés</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">GROS-PORTEUR</span>
+            </div>
+            <div id="gpTypologie">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+
+          <!-- SECTION 07 — ÉVOLUTION MENSUELLE GP -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">07 · TENDANCE</div>
+                <h2 class="rapport-h2">Évolution mensuelle de l'activité &amp; qualité</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">GROS-PORTEUR</span>
+            </div>
+            <div id="gpEvolution">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+
+          <!-- SECTION 08 — CONTRÔLEURS GP -->
+          <div class="rapport-section-block">
+            <div class="rapport-hero">
+              <div>
+                <div class="rapport-eyebrow">08 · TERRAIN</div>
+                <h2 class="rapport-h2">Activité des contrôleurs</h2>
+                <div class="rapport-underline"></div>
+              </div>
+              <span class="rapport-type-tag">GROS-PORTEUR</span>
+            </div>
+            <div id="gpControleurs">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ======== EXPORT ======== -->
+      <div id="viewExport" class="view" style="display:none;">
+        <div class="page-title"><h2>📥 Export des données</h2></div>
+        <div class="export-grid">
+          <div class="card export-card">
+            <div class="card-body text-center">
+              <div class="export-icon">📊</div>
+              <h3>Export CSV complet</h3>
+              <p>Toutes les fiches avec zones, points, conformités et observations.</p>
+              <button class="btn btn-primary btn-lg" id="btnExportCSV">⬇ Télécharger CSV</button>
+            </div>
+          </div>
+          <div class="card export-card">
+            <div class="card-body text-center">
+              <div class="export-icon">🖨</div>
+              <h3>Export PDF (impression)</h3>
+              <p>Sélectionner un vol pour imprimer la fiche complète.</p>
+              <div class="form-group" style="margin-top:1rem;">
+                <select id="selectVolPrint"><option value="">-- Choisir un vol --</option></select>
+              </div>
+              <button class="btn btn-outline btn-lg" id="btnPrintFiche">🖨 Imprimer fiche</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- MODAL VOIR FICHE -->
+  <div id="modalFiche" class="modal-overlay modal-xl" style="display:none;">
+    <div class="modal modal-large">
+      <div class="modal-header">
+        <h3 id="modalFicheTitle">Fiche de contrôle</h3>
+        <button class="btn-close" id="btnCloseFiche">✕</button>
+      </div>
+      <div class="modal-body" id="modalFicheBody">
+        <div class="loading-state">Chargement…</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btnFermerFiche">Fermer</button>
+        <button class="btn btn-primary" onclick="window.print()">🖨 Imprimer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL AJOUTER UTILISATEUR -->
+  <div id="modalAgent" class="modal-overlay" style="display:none;">
+    <div class="modal">
+      <div class="modal-header"><h3 id="modalAgentTitle">Ajouter un utilisateur</h3></div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Nom complet *</label>
+          <input type="text" id="agentNomField" placeholder="Prénom Nom" />
+        </div>
+        <div class="form-group">
+          <label>Matricule * <small style="color:rgba(255,255,255,0.4)">(identifiant de connexion)</small></label>
+          <input type="text" id="agentMatriculeField" placeholder="ex : AG-003"
+                 oninput="this.value = this.value.toUpperCase()" />
+        </div>
+        <div class="form-group">
+          <label>Rôle *</label>
+          <select id="agentRoleField">
+            <option value="agent">Agent Contrôle</option>
+            <option value="superviseur">Superviseur Cabine</option>
+            <option value="chef">Chef de Département</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Mot de passe *</label>
+          <input type="text" id="agentPasswordField" placeholder="Minimum 6 caractères"
+                 oninput="this.value = this.value.toUpperCase()" />
+        </div>
+        <div id="agentModalError" class="alert alert-danger" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btnAnnulerAgent">Annuler</button>
+        <button class="btn btn-primary" id="btnConfirmerAgent">
+          <span id="btnConfirmerAgentText">Créer le compte</span>
+          <span id="btnConfirmerAgentSpinner" style="display:none;">…</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CONFIRMER SUPPRESSION -->
+  <div id="modalDeleteUser" class="modal-overlay" style="display:none;">
+    <div class="modal">
+      <div class="modal-header"><h3>Supprimer l'utilisateur</h3></div>
+      <div class="modal-body">
+        <p>Voulez-vous vraiment supprimer <strong id="deleteUserNom"></strong> ?<br>
+        <small style="color:rgba(255,255,255,0.4)">Cette action est irréversible.</small></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btnAnnulerDelete">Annuler</button>
+        <button class="btn btn-danger" id="btnConfirmerDelete">Supprimer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIGHTBOX PHOTO -->
+  <div id="lightbox" class="lightbox" style="display:none;">
+    <div class="lightbox-overlay" id="lightboxOverlay"></div>
+    <div class="lightbox-content">
+      <button class="lightbox-close" id="lightboxClose">✕</button>
+      <img id="lightboxImg" src="" alt="Photo NC" />
+    </div>
+  </div>
+
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- ZONE D'IMPRESSION -->
+  <div id="printZone" class="print-zone" style="display:none;"></div>
+
+  <script type="module" src="js/admin.js"></script>
+
+</body>
+</html>

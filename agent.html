@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent – Contrôle Cabines</title>
+  <link rel="icon" type="image/png" href="images/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="app-body">
+
+  <!-- TOPBAR -->
+  <header class="topbar" id="topbar">
+    <div class="topbar-left">
+      <button class="btn-menu" id="btnMenu" aria-label="Menu"><i class="fas fa-bars"></i></button>
+      <span class="topbar-page-title" id="topbarTitle">Nouveau contrôle</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn-notif" aria-label="Notifications"><i class="fas fa-bell"></i></button>
+      <span class="topbar-username" id="agentNomTopbar">…</span>
+      <div class="topbar-avatar" id="topbarAvatar">AG</div>
+      <button class="btn btn-outline btn-sm" id="btnLogout">
+        <i class="fas fa-right-from-bracket"></i> Déconnexion
+      </button>
+    </div>
+  </header>
+
+  <!-- OFFLINE BANNER -->
+  <div id="offlineBanner" class="offline-banner" style="display:none;">
+    ⚠ Hors ligne – données sauvegardées localement. Reconnexion en cours…
+  </div>
+
+  <!-- LAYOUT -->
+  <div class="app-layout">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <!-- Logo RAM Handling -->
+      <div class="sidebar-brand">
+        <div class="sidebar-logo-box">
+          <img src="images/logo.png" alt="RAM Handling"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='block';" />
+          <span class="sidebar-logo-fallback">RAM<br>HANDLING</span>
+        </div>
+      </div>
+
+      <!-- User info -->
+      <div class="sidebar-user-section">
+        <div class="sidebar-user-avatar" id="sidebarAvatar">AG</div>
+        <div class="sidebar-user-info">
+          <span class="sidebar-user-name" id="agentNom">…</span>
+          <span class="sidebar-user-status">SESSION ACTIVE</span>
+        </div>
+      </div>
+
+      <!-- Navigation -->
+      <div class="sidebar-section-label">MON ESPACE</div>
+      <nav class="sidebar-nav">
+        <a href="#" class="sidebar-link active" data-view="nouveau">
+          <span class="sidebar-icon"><i class="fas fa-plus-circle"></i></span>
+          <span>Nouveau contrôle</span>
+        </a>
+        <a href="#" class="sidebar-link" data-view="mes-controles">
+          <span class="sidebar-icon"><i class="fas fa-list-check"></i></span>
+          <span>Mes contrôles</span>
+          <span class="badge" id="badgeEnCours" style="display:none;">0</span>
+        </a>
+      </nav>
+
+      <!-- Footer email -->
+      <div class="sidebar-footer-email">
+        <i class="fas fa-envelope"></i>
+        ALBOUJRADA@ramhandling.com
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content" id="mainContent">
+
+      <!-- ======== VUE : NOUVEAU CONTRÔLE ======== -->
+      <div id="viewNouveau" class="view active">
+
+        <!-- ÉTAPE 1 : En-tête du vol -->
+        <div id="step1" class="card step-card">
+          <div class="card-header">
+            <h2>✈ Nouveau contrôle – Informations du vol</h2>
+          </div>
+          <div class="card-body">
+            <form id="formEntete" novalidate>
+
+              <!-- Sélection du type de vol -->
+              <div class="form-group form-group-full">
+                <label>Type de vol *</label>
+                <div class="type-vol-grid" id="typeVolGrid">
+                  <button type="button" class="type-vol-card" data-value="Moyen Porteur Transit">
+                    <span class="type-vol-icon">✈</span>
+                    <span class="type-vol-label">Moyen Porteur</span>
+                    <span class="type-vol-sublabel">Transit</span>
+                  </button>
+                  <button type="button" class="type-vol-card" data-value="Gros Porteur Transit">
+                    <span class="type-vol-icon">🛫</span>
+                    <span class="type-vol-label">Gros Porteur</span>
+                    <span class="type-vol-sublabel">Transit</span>
+                  </button>
+                  <button type="button" class="type-vol-card" data-value="Moyen Porteur Stop Cmn">
+                    <span class="type-vol-icon">🛬</span>
+                    <span class="type-vol-label">Moyen Porteur</span>
+                    <span class="type-vol-sublabel">Stop Cmn</span>
+                  </button>
+                  <button type="button" class="type-vol-card" data-value="Gros Porteur Stop Cmn">
+                    <span class="type-vol-icon">🛩</span>
+                    <span class="type-vol-label">Gros Porteur</span>
+                    <span class="type-vol-sublabel">Stop Cmn</span>
+                  </button>
+                </div>
+                <input type="hidden" id="typeVol" />
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="dateVol">Date du vol *</label>
+                  <input type="date" id="dateVol" required />
+                </div>
+                <div class="form-group">
+                  <label for="codeCompagnie">Code cie *</label>
+                  <input type="text" id="codeCompagnie" placeholder="ex: AT" maxlength="2" style="text-transform:uppercase" required />
+                </div>
+                <div class="form-group">
+                  <label for="numeroVol">Numéro de vol *</label>
+                  <input type="text" id="numeroVol" placeholder="ex: 7894" maxlength="4" required />
+                </div>
+                <div class="form-group">
+                  <label for="immatriculation">Immatriculation avion</label>
+                  <input type="text" id="immatriculation" placeholder="ex: CN-RGT" maxlength="6" />
+                </div>
+                <div class="form-group">
+                  <label for="heureDebut">Heure début nettoyage</label>
+                  <input type="time" id="heureDebut" />
+                </div>
+                <div class="form-group">
+                  <label for="heureFin">Heure fin nettoyage</label>
+                  <input type="time" id="heureFin" />
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-lg" id="btnCommencer">
+                  Commencer le contrôle →
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- ÉTAPE 2 : Fiche de contrôle -->
+        <div id="step2" style="display:none;">
+
+          <!-- Infos vol courant -->
+          <div class="vol-header-bar">
+            <div class="vol-info">
+              <span class="vol-badge" id="volBadgeNumero">—</span>
+              <span id="volBadgeDate">—</span>
+              <span id="volBadgeType">—</span>
+            </div>
+            <div class="vol-actions">
+              <button class="btn btn-outline btn-sm" id="btnAnnulerFiche">← Retour</button>
+            </div>
+          </div>
+
+          <!-- Barre de progression -->
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-label">
+              <span>Progression :</span>
+              <span id="progressPercent">0%</span>
+              <span id="progressCount">(0 / 0)</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
+            </div>
+          </div>
+
+          <!-- Sections accordéon de la fiche -->
+          <div id="ficheAccordion"></div>
+
+          <!-- Section matériel -->
+          <div class="card accordion-card" id="sectionMateriel">
+            <button class="accordion-header" data-target="accordionMateriel">
+              <span>🧹 Matériel utilisé</span>
+              <span class="accordion-arrow">▼</span>
+            </button>
+            <div class="accordion-body" id="accordionMateriel">
+              <div class="btn-tout-cocher-wrap">
+                <button type="button" class="btn btn-primary btn-sm" id="btnToutCocher">✅ Tout cocher</button>
+              </div>
+              <div class="form-group">
+                <label>Nombre d'aspirateurs</label>
+                <input type="number" id="nbAspirateurs" min="0" max="99" placeholder="0" class="input-sm" style="max-width:100px;" />
+              </div>
+              <div class="form-group">
+                <label>Nombre d'agents de nettoyage</label>
+                <input type="number" id="nbAgents" min="0" max="99" placeholder="0" class="input-sm" style="max-width:100px;" />
+              </div>
+
+              <div class="materiel-section">
+                <h4>🪣 Seaux toilettes</h4>
+                <div class="materiel-grid">
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux toilettes" data-nom="Torchon rouge" /> Torchon rouge</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux toilettes" data-nom="Chamoisine" /> Chamoisine</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux toilettes" data-nom="Brosse de toilette" /> Brosse de toilette</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux toilettes" data-nom="Serpillière" /> Serpillière</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux toilettes" data-nom="Eau javel" /> Eau javel</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux toilettes" data-nom="Netal 20/50" /> Netal 20/50</label>
+                </div>
+              </div>
+
+              <div class="materiel-section">
+                <h4>🍽 Seaux galley</h4>
+                <div class="materiel-grid">
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux galley" data-nom="Torchon vert" /> Torchon vert</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux galley" data-nom="Serpillière" /> Serpillière</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux galley" data-nom="Brosse galley" /> Brosse galley</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux galley" data-nom="Decap four" /> Decap four</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux galley" data-nom="Netal 20/50" /> Netal 20/50</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux galley" data-nom="Palette courte avec brosse" /> Palette courte avec brosse</label>
+                </div>
+              </div>
+
+              <div class="materiel-section">
+                <h4>💺 Seaux cabine</h4>
+                <div class="materiel-grid">
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux cabine" data-nom="Torchon bleu" /> Torchon bleu</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux cabine" data-nom="Decap four" /> Decap four</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux cabine" data-nom="Brosse bay bay" /> Brosse bay bay</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux cabine" data-nom="Brosse tapis" /> Brosse tapis</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux cabine" data-nom="Naga gumm" /> Naga gumm</label>
+                  <label class="checkbox-label"><input type="checkbox" class="mat-check" data-cat="Seaux cabine" data-nom="Nettoyant écran" /> Nettoyant écran</label>
+                </div>
+              </div>
+
+              <div class="materiel-section">
+                <label class="checkbox-label checkbox-large">
+                  <input type="checkbox" class="mat-check" data-cat="Marche deux pieds" data-nom="Marche deux pieds" />
+                  <strong>🪜 Marche deux pieds</strong>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bouton soumettre -->
+          <div class="submit-section">
+            <div id="submitInfo" class="submit-info"></div>
+            <button class="btn btn-success btn-xl" id="btnSoumettre">
+              ✅ Soumettre le contrôle
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ======== VUE : MES CONTRÔLES ======== -->
+      <div id="viewMesControles" class="view" style="display:none;">
+        <div class="card">
+          <div class="card-header">
+            <h2>📋 Mes contrôles</h2>
+          </div>
+          <div class="card-body">
+            <div id="mesControlesTable" class="table-responsive">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- MODAL CONFIRMATION RETOUR -->
+  <div id="modalRetour" class="modal-overlay" style="display:none;">
+    <div class="modal modal-confirm">
+      <div class="modal-confirm-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 12H5M12 5l-7 7 7 7"/>
+        </svg>
+      </div>
+      <h3 class="modal-confirm-title">Retourner à l'accueil ?</h3>
+      <p class="modal-confirm-text">La fiche en cours est <strong>sauvegardée automatiquement</strong>. Vous pourrez la reprendre à tout moment.</p>
+      <div class="modal-confirm-actions">
+        <button class="btn btn-outline" id="btnAnnulerRetour">Rester sur la fiche</button>
+        <button class="btn btn-primary" id="btnConfirmerRetour">← Retour à l'accueil</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL SUCCÈS SOUMISSION -->
+  <div id="modalSucces" class="modal-overlay" style="display:none;">
+    <div class="modal modal-succes">
+      <div class="succes-checkmark">
+        <svg viewBox="0 0 52 52"><circle class="succes-circle" cx="26" cy="26" r="25" fill="none"/><path class="succes-tick" fill="none" d="M14 27l8 8 16-16"/></svg>
+      </div>
+      <h3 class="succes-title">Contrôle soumis !</h3>
+      <p class="succes-subtitle" id="succesSubtitle">La fiche a été transmise avec succès.</p>
+      <div class="succes-stats" id="succesStats"></div>
+      <div class="succes-actions">
+        <button class="btn btn-primary succes-btn-pdf" id="btnSuccesPDF">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Télécharger PDF
+        </button>
+        <button class="btn btn-outline succes-btn-share" id="btnSuccesShare">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          Partager
+        </button>
+        <button class="btn btn-ghost succes-btn-retour" id="btnSuccesRetour">Retour à l'accueil</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CONFIRMATION SOUMISSION -->
+  <div id="modalSoumettre" class="modal-overlay" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Confirmer la soumission</h3>
+      </div>
+      <div class="modal-body">
+        <p>Êtes-vous sûr de vouloir soumettre ce contrôle ?</p>
+        <p><strong>Vous ne pourrez plus le modifier après soumission.</strong></p>
+        <div id="modalResume" class="resume-stats"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btnAnnulerModal">Annuler</button>
+        <button class="btn btn-success" id="btnConfirmerSoumission">Confirmer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL FICHE EN LECTURE SEULE -->
+  <div id="modalFiche" class="modal-overlay modal-xl" style="display:none;">
+    <div class="modal modal-large">
+      <div class="modal-header">
+        <h3 id="modalFicheTitle">Fiche de contrôle</h3>
+        <button class="btn-close" id="btnCloseFiche">✕</button>
+      </div>
+      <div class="modal-body" id="modalFicheBody">
+        <div class="loading-state">Chargement…</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btnFermerFiche">Fermer</button>
+        <button class="btn btn-primary" onclick="window.print()">🖨 Imprimer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIGHTBOX PHOTO -->
+  <div id="lightbox" class="lightbox" style="display:none;">
+    <div class="lightbox-overlay" id="lightboxOverlay"></div>
+    <div class="lightbox-content">
+      <button class="lightbox-close" id="lightboxClose">✕</button>
+      <img id="lightboxImg" src="" alt="Photo NC" />
+    </div>
+  </div>
+
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <script type="module" src="js/agent.js"></script>
+
+</body>
+</html>
