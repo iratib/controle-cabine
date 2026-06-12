@@ -53,26 +53,18 @@ function populateMonthSelects() {
 
 async function fetchControlesForVols(volIds, columns = 'conformite, zone, vol_id, point_controle') {
   const CHUNK = 20;
-  const PAGE  = 100;
   const CONCURRENCY = 3;
 
   async function fetchChunk(chunk) {
-    const rows = [];
-    let offset = 0;
-    while (true) {
-      const { data, error } = await supabase.from('controles')
-        .select(columns).in('vol_id', chunk).order('id').range(offset, offset + PAGE - 1);
-      if (error) throw error;
-      if (!data || data.length === 0) break;
-      rows.push(...data);
-      if (data.length < PAGE) break;
-      offset += PAGE;
-    }
-    return rows;
+    const { data, error } = await supabase.from('controles')
+      .select(columns).in('vol_id', chunk);
+    if (error) throw error;
+    return data || [];
   }
 
   const chunks = [];
-  for (let i = 0; i < volIds.length; i += CHUNK) chunks.push(volIds.slice(i, i + CHUNK));
+  const safeIds = volIds.filter(Boolean);
+  for (let i = 0; i < safeIds.length; i += CHUNK) chunks.push(safeIds.slice(i, i + CHUNK));
 
   const results = [];
   for (let i = 0; i < chunks.length; i += CONCURRENCY) {
