@@ -96,9 +96,13 @@
       <!-- Configuration -->
       <div class="sidebar-section-label" style="margin-top:.5rem;">CONFIGURATION</div>
       <nav class="sidebar-nav">
-        <a href="#" class="sidebar-link" data-view="sla">
+        <a href="#" class="sidebar-link" data-view="sla-transit">
           <span class="sidebar-icon"><i class="fas fa-gauge-high"></i></span>
-          <span>SLA &amp; Nettoyage</span>
+          <span>SLA Transit</span>
+        </a>
+        <a href="#" class="sidebar-link" data-view="sla-stop">
+          <span class="sidebar-icon"><i class="fas fa-circle-stop"></i></span>
+          <span>SLA Stop CMN</span>
         </a>
         <a href="#" class="sidebar-link" data-view="compagnies">
           <span class="sidebar-icon"><i class="fas fa-building"></i></span>
@@ -147,6 +151,20 @@
             <span class="db-filter-label">Agent</span>
             <select id="dbFilterAgent" class="db-select"><option value="">Tous les agents</option></select>
           </div>
+          <div class="db-filter-group">
+            <span class="db-filter-label">Compagnie</span>
+            <select id="dbFilterCie" class="db-select"><option value="">Toutes</option></select>
+          </div>
+        </div>
+
+        <!-- Widget SLA global -->
+        <div class="card sla-db-card">
+          <div class="card-header">
+            <h3><i class="fas fa-gauge-high"></i> Conformité SLA — Vue globale</h3>
+          </div>
+          <div class="card-body" id="slaGlobalContent">
+            <div class="loading-state">Chargement…</div>
+          </div>
         </div>
 
         <!-- Cartes stats -->
@@ -176,7 +194,7 @@
             <div class="stat-icon">⚠</div>
             <div class="stat-body">
               <div class="stat-value" id="statNcTotal">—</div>
-              <div class="stat-label">NC en attente</div>
+              <div class="stat-label">Non-conformités</div>
             </div>
           </div>
         </div>
@@ -738,45 +756,82 @@
         </div>
       </div>
 
-      <!-- ======== SLA & NETTOYAGE ======== -->
-      <div id="viewSla" class="view" style="display:none;">
-        <div class="page-title"><h2><i class="fas fa-gauge-high"></i> SLA &amp; Agents de Nettoyage</h2></div>
+      <!-- ======== SLA TRANSIT ======== -->
+      <div id="viewSlatransit" class="view" style="display:none;">
+        <div class="page-title"><h2><i class="fas fa-gauge-high"></i> SLA &amp; Nettoyage — Transit</h2></div>
 
-        <!-- Config cards -->
         <div class="sla-section-title">
-          <i class="fas fa-sliders"></i> Configuration des standards
-          <span class="sla-section-hint">Définissez la durée maximale de nettoyage et le nombre d'agents requis par type de vol.</span>
+          <i class="fas fa-sliders"></i> Configuration des standards — Transit
+          <span class="sla-section-hint">Durée SLA et effectif agents par catégorie d'appareil. Cliquez sur Enregistrer pour sauvegarder.</span>
         </div>
 
-        <div class="sla-config-grid" id="slaConfigGrid">
+        <div class="sla-cat-grid" id="slaConfigGridTransit">
           <div class="loading-state">Chargement…</div>
         </div>
 
         <div class="sla-save-row">
-          <button class="btn btn-primary" id="btnSaveSla">
+          <button class="btn btn-primary" id="btnSaveSlaTransit">
             <i class="fas fa-floppy-disk"></i> Enregistrer la configuration
           </button>
-          <span class="sla-save-status" id="slaSaveStatus"></span>
+          <span class="sla-save-status" id="slaSaveStatusTransit"></span>
         </div>
 
-        <!-- Séparateur -->
         <div class="sla-divider"></div>
 
-        <!-- Stats conformité -->
         <div class="sla-section-title">
-          <i class="fas fa-chart-bar"></i> Conformité SLA
-          <span class="sla-section-hint">Vols dont la durée réelle (heure début → heure fin) respecte le SLA configuré.</span>
+          <i class="fas fa-chart-bar"></i> Conformité SLA — Transit
+          <span class="sla-section-hint">Vols Transit dont la durée réelle respecte le SLA configuré.</span>
         </div>
 
         <div class="sla-stats-filters">
           <label>Mois</label>
-          <select id="slaStatsMois" class="db-select"><option value="">Tous les mois</option></select>
-          <button class="btn btn-outline btn-sm" id="btnSlaStatsRefresh">
+          <select id="slaStatsMoisTransit" class="db-select"><option value="">Tous les mois</option></select>
+          <button class="btn btn-outline btn-sm" id="btnSlaStatsRefreshTransit">
             <i class="fas fa-rotate-right"></i> Actualiser
           </button>
         </div>
 
-        <div id="slaStatsContent">
+        <div id="slaStatsContentTransit">
+          <div class="loading-state">Sélectionnez un mois et cliquez Actualiser.</div>
+        </div>
+      </div>
+
+      <!-- ======== SLA STOP CMN ======== -->
+      <div id="viewSlastop" class="view" style="display:none;">
+        <div class="page-title"><h2><i class="fas fa-circle-stop"></i> SLA &amp; Nettoyage — Stop CMN</h2></div>
+
+        <div class="sla-section-title">
+          <i class="fas fa-sliders"></i> Configuration des standards — Stop CMN
+          <span class="sla-section-hint">Durée SLA et effectif agents par catégorie d'appareil. Cliquez sur Enregistrer pour sauvegarder.</span>
+        </div>
+
+        <div class="sla-cat-grid" id="slaConfigGridStop">
+          <div class="loading-state">Chargement…</div>
+        </div>
+
+        <div class="sla-save-row">
+          <button class="btn btn-primary" id="btnSaveSlaStop">
+            <i class="fas fa-floppy-disk"></i> Enregistrer la configuration
+          </button>
+          <span class="sla-save-status" id="slaSaveStatusStop"></span>
+        </div>
+
+        <div class="sla-divider"></div>
+
+        <div class="sla-section-title">
+          <i class="fas fa-chart-bar"></i> Conformité SLA — Stop CMN
+          <span class="sla-section-hint">Vols Stop CMN dont la durée réelle respecte le SLA configuré.</span>
+        </div>
+
+        <div class="sla-stats-filters">
+          <label>Mois</label>
+          <select id="slaStatsMoisStop" class="db-select"><option value="">Tous les mois</option></select>
+          <button class="btn btn-outline btn-sm" id="btnSlaStatsRefreshStop">
+            <i class="fas fa-rotate-right"></i> Actualiser
+          </button>
+        </div>
+
+        <div id="slaStatsContentStop">
           <div class="loading-state">Sélectionnez un mois et cliquez Actualiser.</div>
         </div>
       </div>

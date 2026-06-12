@@ -191,7 +191,8 @@ function setupNavigation() {
       else if (view === 'export') setupExportView();
       else if (view === 'analyse-mp') loadAnalyseType('MP');
       else if (view === 'analyse-gp') loadAnalyseType('GP');
-      else if (view === 'sla') loadSlaView();
+      else if (view === 'sla-transit') loadSlaPageView('transit');
+      else if (view === 'sla-stop')    loadSlaPageView('stop');
       else if (view === 'compagnies') loadCompagniesView();
     });
   });
@@ -204,7 +205,8 @@ function capitalize(str) {
     'nc': 'NC', 'agents': 'Agents', 'export': 'Export',
     'analyse-mp': 'AnalyseMP', 'analysemp': 'AnalyseMP',
     'analyse-gp': 'AnalyseGP', 'analysegp': 'AnalyseGP',
-    'sla': 'Sla',
+    'sla-transit': 'Slatransit',
+    'sla-stop':    'Slastop',
     'compagnies': 'Compagnies'
   };
   return map[str] || str.charAt(0).toUpperCase() + str.slice(1);
@@ -408,6 +410,7 @@ async function loadDashboard() {
     renderChartCompagnies(vols);
     renderTopNC(allControles);
     loadActiviteRecente();
+    loadDashboardSla();
   } catch (err) {
     console.error('Dashboard error:', err);
   }
@@ -590,9 +593,9 @@ function renderChartStatuts(vols) {
   const container = document.getElementById('chartStatuts');
   if (!container) return;
   if (!vols.length) { container.innerHTML = '<div class="empty-state">Aucune donnée</div>'; return; }
-  const labels  = { en_cours: 'En cours', soumis: 'Soumis', 'validé': 'Validé', 'rejeté': 'Rejeté' };
-  const colors  = { en_cours: '#f59e0b', soumis: '#3b82f6', 'validé': '#10b981', 'rejeté': '#ef4444' };
-  const counts  = { en_cours: 0, soumis: 0, 'validé': 0, 'rejeté': 0 };
+  const labels  = { en_cours: 'En cours', soumis: 'Soumis' };
+  const colors  = { en_cours: '#f59e0b', soumis: '#3b82f6' };
+  const counts  = { en_cours: 0, soumis: 0 };
   vols.forEach(v => { if (v.statut in counts) counts[v.statut]++; });
   const segments  = Object.entries(counts).map(([k, c]) => ({ count: c, color: colors[k] }));
   const legendHtml = Object.entries(counts).map(([k, c]) => `
@@ -2479,84 +2482,161 @@ document.getElementById('btnConfirmerAdminDeleteVol')?.addEventListener('click',
 
 // ---- SLA & NETTOYAGE ----
 
-const SLA_TYPES = [
-  { key: 'Moyen Porteur Transit',  label: 'Moyen Porteur Transit',  icon: 'fa-plane',       defaultSla: 45, defaultAgents: 3 },
-  { key: 'Moyen Porteur Stop Cmn', label: 'Moyen Porteur Stop Cmn', icon: 'fa-plane-circle-check', defaultSla: 60, defaultAgents: 4 },
-  { key: 'Gros Porteur Transit',   label: 'Gros Porteur Transit',   icon: 'fa-jet-fighter',  defaultSla: 60, defaultAgents: 5 },
-  { key: 'Gros Porteur Stop Cmn',  label: 'Gros Porteur Stop Cmn',  icon: 'fa-jet-fighter-up', defaultSla: 90, defaultAgents: 7 },
+// Référentiel OACI par catégorie — TRANSIT
+const SLA_CATEGORIES_TRANSIT = [
+  { key: 'transit_cat2', label: 'Catégorie II',  seats: '≤ 41 sièges',      avions: ['M81','M87','AR1','CRJ'],            slaMin: 10, slaMax: 12, agents: { cabine: 2,  galley: 1, sanitaire: 1, aspirateur: 0 } },
+  { key: 'transit_cat3', label: 'Catégorie III', seats: '42 – 90 sièges',   avions: ['AT7'],                              slaMin: 10, slaMax: 12, agents: { cabine: 2,  galley: 1, sanitaire: 1, aspirateur: 0 } },
+  { key: 'transit_cat4', label: 'Catégorie IV',  seats: '91 – 120 sièges',  avions: ['B73G','E190','CRJ1000'],            slaMin: 15, slaMax: 17, agents: { cabine: 5,  galley: 1, sanitaire: 1, aspirateur: 1 } },
+  { key: 'transit_cat5', label: 'Catégorie V',   seats: '121 – 200 sièges', avions: ['B738','A321','A320','A319'],        slaMin: 15, slaMax: 17, agents: { cabine: 5,  galley: 1, sanitaire: 1, aspirateur: 1 } },
+  { key: 'transit_cat6', label: 'Catégorie VI',  seats: '201 – 350 sièges', avions: ['B787','B767','B777','A330','A340'], slaMin: 30, slaMax: 35, agents: { cabine: 10, galley: 2, sanitaire: 2, aspirateur: 2 } },
+  { key: 'transit_cat7', label: 'Catégorie VII', seats: '> 351 sièges',     avions: ['A380','B744'],                     slaMin: 30, slaMax: 35, agents: { cabine: 15, galley: 4, sanitaire: 4, aspirateur: 4 } },
+];
+
+// Référentiel OACI par catégorie — STOP CMN (mêmes agents, SLA plus longs)
+const SLA_CATEGORIES_STOP = [
+  { key: 'stop_cat2', label: 'Catégorie II',  seats: '≤ 41 sièges',      avions: ['M81','M87','AR1','CRJ'],            slaMin: 15, slaMax: 18, agents: { cabine: 2,  galley: 1, sanitaire: 1, aspirateur: 0 } },
+  { key: 'stop_cat3', label: 'Catégorie III', seats: '42 – 90 sièges',   avions: ['AT7'],                              slaMin: 15, slaMax: 18, agents: { cabine: 2,  galley: 1, sanitaire: 1, aspirateur: 0 } },
+  { key: 'stop_cat4', label: 'Catégorie IV',  seats: '91 – 120 sièges',  avions: ['B73G','E190','CRJ1000'],            slaMin: 25, slaMax: 28, agents: { cabine: 5,  galley: 1, sanitaire: 1, aspirateur: 1 } },
+  { key: 'stop_cat5', label: 'Catégorie V',   seats: '121 – 200 sièges', avions: ['B738','A321','A320','A319'],        slaMin: 25, slaMax: 28, agents: { cabine: 5,  galley: 1, sanitaire: 1, aspirateur: 1 } },
+  { key: 'stop_cat6', label: 'Catégorie VI',  seats: '201 – 350 sièges', avions: ['B787','B767','B777','A330','A340'], slaMin: 45, slaMax: 50, agents: { cabine: 10, galley: 2, sanitaire: 2, aspirateur: 2 } },
+  { key: 'stop_cat7', label: 'Catégorie VII', seats: '> 351 sièges',     avions: ['A380','B744'],                     slaMin: 45, slaMax: 50, agents: { cabine: 15, galley: 4, sanitaire: 4, aspirateur: 4 } },
+];
+
+// Mapping type_vol DB → référentiel stats
+const SLA_STATS_TYPES = [
+  { key: 'Moyen Porteur Transit',  label: 'MP Transit',  filterType: 'transit', defaultSla: 17 },
+  { key: 'Gros Porteur Transit',   label: 'GP Transit',  filterType: 'transit', defaultSla: 35 },
+  { key: 'Moyen Porteur Stop Cmn', label: 'MP Stop CMN', filterType: 'stop',    defaultSla: 28 },
+  { key: 'Gros Porteur Stop Cmn',  label: 'GP Stop CMN', filterType: 'stop',    defaultSla: 50 },
 ];
 
 let slaConfigCache = {};
 
-async function loadSlaView() {
-  // Populate month select
-  const sel = document.getElementById('slaStatsMois');
+async function loadSlaPageView(type) {
+  const S = type === 'transit' ? 'Transit' : 'Stop';
+  const cats = type === 'transit' ? SLA_CATEGORIES_TRANSIT : SLA_CATEGORIES_STOP;
+  const storageKey = `sla_detail_${type}`;
+
+  const sel = document.getElementById(`slaStatsMois${S}`);
   if (sel && sel.options.length <= 1) {
     getMonthsList().forEach(({ value, label }) => {
       const o = document.createElement('option'); o.value = value; o.textContent = label; sel.appendChild(o);
     });
   }
 
-  // Load config from Supabase
-  const grid = document.getElementById('slaConfigGrid');
-  grid.innerHTML = '<div class="loading-state">Chargement…</div>';
-
-  let configRows = [];
   if (!isDemoMode) {
     const { data } = await supabase.from('sla_config').select('*');
-    configRows = data || [];
+    (data || []).forEach(r => { slaConfigCache[r.type_vol] = r; });
   }
 
-  configRows.forEach(r => { slaConfigCache[r.type_vol] = r; });
-  renderSlaConfigGrid();
+  renderSlaConfigGrid(cats, storageKey, S);
 
-  document.getElementById('btnSaveSla')?.addEventListener('click', saveSlaConfig);
-  document.getElementById('btnSlaStatsRefresh')?.addEventListener('click', loadSlaStats);
+  document.getElementById(`btnSaveSla${S}`)?.addEventListener('click', () => saveSlaConfig(cats, storageKey, S));
+  document.getElementById(`btnSlaStatsRefresh${S}`)?.addEventListener('click', () => loadSlaStats(type, S));
 }
 
-function renderSlaConfigGrid() {
-  const grid = document.getElementById('slaConfigGrid');
-  grid.innerHTML = SLA_TYPES.map(t => {
-    const cached = slaConfigCache[t.key] || {};
-    const sla    = cached.sla_minutes        ?? t.defaultSla;
-    const agents = cached.nb_agents_nettoyage ?? t.defaultAgents;
+function renderSlaConfigGrid(cats, storageKey, suffix) {
+  const grid = document.getElementById(`slaConfigGrid${suffix}`);
+  const stored = JSON.parse(localStorage.getItem(storageKey) || '{}');
+
+  grid.innerHTML = cats.map(t => {
+    const cached     = slaConfigCache[t.key] || {};
+    const detail     = stored[t.key] || {};
+    const slaMax     = cached.sla_minutes ?? t.slaMax;
+    const slaMin     = detail.slaMin      ?? t.slaMin;
+    const cabine     = detail.cabine      ?? t.agents.cabine;
+    const galley     = detail.galley      ?? t.agents.galley;
+    const sanitaire  = detail.sanitaire   ?? t.agents.sanitaire;
+    const aspirateur = detail.aspirateur  ?? t.agents.aspirateur;
+    const total      = cabine + galley + sanitaire + aspirateur;
+
+    const avionTags = t.avions.map(a => `<span class="sla-avion-tag">${a}</span>`).join('');
+
     return `
-      <div class="sla-config-card">
-        <div class="sla-card-header">
-          <i class="fas ${t.icon} sla-card-icon"></i>
-          <span class="sla-card-title">${t.label}</span>
+      <div class="sla-cat-card">
+        <div class="sla-cat-header">
+          <div class="sla-cat-title-row">
+            <span class="sla-cat-label">${t.label}</span>
+            <span class="sla-cat-type-badge">TRANSIT</span>
+          </div>
+          <div class="sla-cat-seats"><i class="fas fa-chair"></i> ${t.seats}</div>
         </div>
-        <div class="sla-card-body">
-          <div class="sla-field">
-            <label><i class="fas fa-clock"></i> Durée max. nettoyage</label>
-            <div class="sla-input-row">
-              <input type="number" class="sla-input" id="sla_min_${t.key}" value="${sla}" min="1" max="999" />
+        <div class="sla-cat-body">
+
+          <div class="sla-cat-avions">${avionTags}</div>
+
+          <div class="sla-cat-section">
+            <div class="sla-cat-section-label"><i class="fas fa-clock"></i> SLA Transit</div>
+            <div class="sla-sla-range">
+              <input type="number" class="sla-input sla-input-sm" id="sla_min_${t.key}" value="${slaMin}" min="1" max="999" />
+              <span class="sla-range-sep">→</span>
+              <input type="number" class="sla-input sla-input-sm" id="sla_max_${t.key}" value="${slaMax}" min="1" max="999" />
               <span class="sla-unit">min</span>
             </div>
           </div>
-          <div class="sla-field">
-            <label><i class="fas fa-users"></i> Agents nettoyage requis</label>
-            <div class="sla-input-row">
-              <input type="number" class="sla-input" id="sla_ag_${t.key}" value="${agents}" min="1" max="99" />
-              <span class="sla-unit">agents</span>
+
+          <div class="sla-cat-section">
+            <div class="sla-cat-section-label"><i class="fas fa-users"></i> Agents de nettoyage</div>
+            <div class="sla-agents-breakdown">
+              <div class="sla-agent-row">
+                <span class="sla-agent-label">Cabine</span>
+                <input type="number" class="sla-input sla-input-xs" id="ag_cabine_${t.key}" value="${cabine}" min="0" max="99" oninput="updateCatTotal('${t.key}')" />
+                <span class="sla-unit">ag.</span>
+              </div>
+              <div class="sla-agent-row">
+                <span class="sla-agent-label">Galley</span>
+                <input type="number" class="sla-input sla-input-xs" id="ag_galley_${t.key}" value="${galley}" min="0" max="99" oninput="updateCatTotal('${t.key}')" />
+                <span class="sla-unit">ag.</span>
+              </div>
+              <div class="sla-agent-row">
+                <span class="sla-agent-label">Sanitaire</span>
+                <input type="number" class="sla-input sla-input-xs" id="ag_sanitaire_${t.key}" value="${sanitaire}" min="0" max="99" oninput="updateCatTotal('${t.key}')" />
+                <span class="sla-unit">ag.</span>
+              </div>
+              <div class="sla-agent-row">
+                <span class="sla-agent-label">Aspirateur + J</span>
+                <input type="number" class="sla-input sla-input-xs" id="ag_asp_${t.key}" value="${aspirateur}" min="0" max="99" oninput="updateCatTotal('${t.key}')" />
+                <span class="sla-unit">ag.</span>
+              </div>
+              <div class="sla-agents-total-row">
+                <span>Total</span>
+                <span class="sla-total-value" id="total_${t.key}">${total}</span>
+                <span class="sla-unit">agents</span>
+              </div>
             </div>
           </div>
+
         </div>
       </div>`;
   }).join('');
 }
 
-async function saveSlaConfig() {
-  const btn    = document.getElementById('btnSaveSla');
-  const status = document.getElementById('slaSaveStatus');
+function updateCatTotal(key) {
+  const posts = ['cabine', 'galley', 'sanitaire', 'asp'];
+  const total = posts.reduce((sum, p) => sum + (parseInt(document.getElementById(`ag_${p}_${key}`)?.value) || 0), 0);
+  const el = document.getElementById(`total_${key}`);
+  if (el) el.textContent = total;
+}
+
+async function saveSlaConfig(cats, storageKey, suffix) {
+  const btn    = document.getElementById(`btnSaveSla${suffix}`);
+  const status = document.getElementById(`slaSaveStatus${suffix}`);
   btn.disabled = true;
   status.textContent = '';
 
-  const rows = SLA_TYPES.map(t => ({
-    type_vol:             t.key,
-    sla_minutes:          parseInt(document.getElementById(`sla_min_${t.key}`)?.value) || t.defaultSla,
-    nb_agents_nettoyage:  parseInt(document.getElementById(`sla_ag_${t.key}`)?.value)  || t.defaultAgents,
-  }));
+  const detailData = {};
+  const rows = cats.map(t => {
+    const slaMax     = parseInt(document.getElementById(`sla_max_${t.key}`)?.value)      || t.slaMax;
+    const slaMin     = parseInt(document.getElementById(`sla_min_${t.key}`)?.value)      || t.slaMin;
+    const cabine     = parseInt(document.getElementById(`ag_cabine_${t.key}`)?.value)    || 0;
+    const galley     = parseInt(document.getElementById(`ag_galley_${t.key}`)?.value)    || 0;
+    const sanitaire  = parseInt(document.getElementById(`ag_sanitaire_${t.key}`)?.value) || 0;
+    const aspirateur = parseInt(document.getElementById(`ag_asp_${t.key}`)?.value)       || 0;
+    detailData[t.key] = { slaMin, cabine, galley, sanitaire, aspirateur };
+    return { type_vol: t.key, sla_minutes: slaMax, nb_agents_nettoyage: cabine + galley + sanitaire + aspirateur };
+  });
+
+  localStorage.setItem(storageKey, JSON.stringify(detailData));
 
   if (isDemoMode) {
     rows.forEach(r => { slaConfigCache[r.type_vol] = r; });
@@ -2576,11 +2656,23 @@ async function saveSlaConfig() {
   btn.disabled = false;
 }
 
-async function loadSlaStats() {
-  const content = document.getElementById('slaStatsContent');
+function getSlaForBroadType(typeVolKey) {
+  // Derive effective SLA for a broad type_vol from the stored category config
+  const mp = typeVolKey.includes('Moyen');
+  const isTransit = typeVolKey.includes('Transit');
+  const prefix = isTransit ? 'transit' : 'stop';
+  const [catA, catB] = mp ? [`${prefix}_cat4`, `${prefix}_cat5`] : [`${prefix}_cat6`, `${prefix}_cat7`];
+  const def = isTransit ? (mp ? 17 : 35) : (mp ? 28 : 50);
+  const a = slaConfigCache[catA]?.sla_minutes ?? def;
+  const b = slaConfigCache[catB]?.sla_minutes ?? def;
+  return Math.max(a, b);
+}
+
+async function loadSlaStats(typeFilter, suffix) {
+  const content = document.getElementById(`slaStatsContent${suffix}`);
   content.innerHTML = '<div class="loading-state">Chargement…</div>';
 
-  const mois = document.getElementById('slaStatsMois')?.value || '';
+  const mois = document.getElementById(`slaStatsMois${suffix}`)?.value || '';
   const range = mois ? monthToRange(mois) : null;
 
   let vols = [];
@@ -2604,16 +2696,21 @@ async function loadSlaStats() {
     vols = all;
   }
 
+  // Filtrer sur le type demandé (transit ou stop)
+  vols = vols.filter(v => typeFilter === 'transit'
+    ? (v.type_vol === 'Moyen Porteur Transit' || v.type_vol === 'Gros Porteur Transit')
+    : (v.type_vol === 'Moyen Porteur Stop Cmn' || v.type_vol === 'Gros Porteur Stop Cmn')
+  );
+
   // Calcul conformité par type + collecte des vols hors SLA
+  const activeTypes = SLA_STATS_TYPES.filter(t => t.filterType === typeFilter);
   const stats = {};
-  SLA_TYPES.forEach(t => {
-    const cfg = slaConfigCache[t.key] || {};
+  activeTypes.forEach(t => {
     stats[t.key] = {
       key:     t.key,
       label:   t.label,
-      icon:    t.icon,
-      sla:     cfg.sla_minutes        ?? t.defaultSla,
-      agents:  cfg.nb_agents_nettoyage ?? t.defaultAgents,
+      sla:     getSlaForBroadType(t.key),
+      agents:  slaConfigCache[t.key]?.nb_agents_nettoyage ?? 0,
       total: 0, avecDuree: 0, dansSla: 0, horsSla: 0,
       volsHorsSla: [],
     };
@@ -2668,7 +2765,7 @@ async function loadSlaStats() {
       : `<span style="color:#94a3b8">—</span>`;
     return `
       <tr>
-        <td><i class="fas ${s.icon}"></i> ${s.label}</td>
+        <td>${s.label}</td>
         <td style="text-align:center">${s.sla} min</td>
         <td style="text-align:center">${s.agents}</td>
         <td style="text-align:center">${s.total}</td>
@@ -2707,7 +2804,7 @@ async function loadSlaStats() {
       <div class="card-header">
         <h3>Récapitulatif — ${periodeLabel}</h3>
         ${totalHorsSla > 0 ? `
-        <button class="btn btn-danger btn-sm" id="btnToggleHorsSla">
+        <button class="btn btn-danger btn-sm" id="btnToggleHorsSla_${suffix}">
           <i class="fas fa-triangle-exclamation"></i> Vols hors SLA (${totalHorsSla})
         </button>` : ''}
       </div>
@@ -2715,7 +2812,7 @@ async function loadSlaStats() {
         <table class="data-table">
           <thead><tr>
             <th>Type de vol</th>
-            <th style="text-align:center">SLA</th>
+            <th style="text-align:center">SLA max</th>
             <th style="text-align:center">Agents requis</th>
             <th style="text-align:center">Total vols</th>
             <th style="text-align:center">Dans SLA</th>
@@ -2728,11 +2825,11 @@ async function loadSlaStats() {
       </div>
     </div>
 
-    <div id="slaHorsList" style="display:none;margin-top:1rem;">
+    <div id="slaHorsList_${suffix}" style="display:none;margin-top:1rem;">
       <div class="card sla-hors-card">
         <div class="card-header" style="background:rgba(239,68,68,.08);border-bottom:1px solid rgba(239,68,68,.2);">
           <h3 style="color:#ef4444"><i class="fas fa-triangle-exclamation"></i> Liste des vols hors SLA — ${periodeLabel}</h3>
-          <button class="btn btn-outline btn-sm" id="btnFermerHorsSla"><i class="fas fa-xmark"></i> Fermer</button>
+          <button class="btn btn-outline btn-sm" id="btnFermerHorsSla_${suffix}"><i class="fas fa-xmark"></i> Fermer</button>
         </div>
         <div class="card-body" style="overflow-x:auto;">
           ${allHorsRows.length === 0 ? '<div class="empty-state">Aucun vol hors SLA</div>' : `
@@ -2741,7 +2838,7 @@ async function loadSlaStats() {
               <th>Date</th><th>N° vol</th><th>Immat.</th><th>Type</th><th>Agent contrôle</th>
               <th style="text-align:center">Horaires</th>
               <th style="text-align:center">Durée réelle</th>
-              <th style="text-align:center">SLA</th>
+              <th style="text-align:center">SLA max</th>
               <th style="text-align:center">Dépassement</th>
             </tr></thead>
             <tbody>${horsTableRows}</tbody>
@@ -2752,19 +2849,17 @@ async function loadSlaStats() {
 
     <p class="sla-note"><i class="fas fa-circle-info"></i> <em>Sans horaire</em> = vols sans heure de début ou de fin enregistrée par l'agent de contrôle.</p>`;
 
-  // Bouton global toggle
-  document.getElementById('btnToggleHorsSla')?.addEventListener('click', () => {
-    const panel = document.getElementById('slaHorsList');
+  document.getElementById(`btnToggleHorsSla_${suffix}`)?.addEventListener('click', () => {
+    const panel = document.getElementById(`slaHorsList_${suffix}`);
     const visible = panel.style.display !== 'none';
     panel.style.display = visible ? 'none' : 'block';
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
-  document.getElementById('btnFermerHorsSla')?.addEventListener('click', () => {
-    document.getElementById('slaHorsList').style.display = 'none';
+  document.getElementById(`btnFermerHorsSla_${suffix}`)?.addEventListener('click', () => {
+    document.getElementById(`slaHorsList_${suffix}`).style.display = 'none';
   });
 
-  // Boutons "Voir (N)" par type → filtre la liste sur ce type
   document.querySelectorAll('.sla-voir-hors').forEach(btn => {
     btn.addEventListener('click', () => {
       const typeKey = btn.dataset.type;
@@ -2789,12 +2884,100 @@ async function loadSlaStats() {
             </tr>`;
         }).join('');
 
-      const panel = document.getElementById('slaHorsList');
+      const panel = document.getElementById(`slaHorsList_${suffix}`);
       panel.querySelector('tbody').innerHTML = filteredRows;
       panel.querySelector('h3').innerHTML =
         `<i class="fas fa-triangle-exclamation"></i> Vols hors SLA — ${s.label} — ${periodeLabel}`;
       panel.style.display = 'block';
       panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+}
+
+// ---- WIDGET SLA GLOBAL (Dashboard) ----
+
+async function loadDashboardSla() {
+  const content = document.getElementById('slaGlobalContent');
+  if (!content) return;
+
+  let vols = [];
+  if (isDemoMode) {
+    vols = demoGetVols();
+  } else {
+    const all = [];
+    let off = 0;
+    while (true) {
+      const { data: pg } = await supabase
+        .from('vols')
+        .select('type_vol, heure_debut, heure_fin')
+        .order('date_vol')
+        .range(off, off + 999);
+      if (!pg || pg.length === 0) break;
+      all.push(...pg);
+      if (pg.length < 1000) break;
+      off += 1000;
+    }
+    vols = all;
+    // Charger la config SLA si pas encore en cache
+    if (Object.keys(slaConfigCache).length === 0) {
+      const { data } = await supabase.from('sla_config').select('*');
+      (data || []).forEach(r => { slaConfigCache[r.type_vol] = r; });
+    }
+  }
+
+  const groups = {
+    transit: { label: 'Transit',  keys: ['Moyen Porteur Transit', 'Gros Porteur Transit'],   total: 0, dans: 0 },
+    stop:    { label: 'Stop CMN', keys: ['Moyen Porteur Stop Cmn', 'Gros Porteur Stop Cmn'], total: 0, dans: 0 },
+  };
+
+  vols.forEach(v => {
+    if (!v.heure_debut || !v.heure_fin) return;
+    const grp = groups.transit.keys.includes(v.type_vol) ? groups.transit
+              : groups.stop.keys.includes(v.type_vol)    ? groups.stop
+              : null;
+    if (!grp) return;
+    const [hd, md] = v.heure_debut.split(':').map(Number);
+    const [hf, mf] = v.heure_fin.split(':').map(Number);
+    let duree = (hf * 60 + mf) - (hd * 60 + md);
+    if (duree < 0) duree += 1440;
+    const sla = getSlaForBroadType(v.type_vol);
+    grp.total++;
+    if (duree <= sla) grp.dans++;
+  });
+
+  const totalAll = groups.transit.total + groups.stop.total;
+  const dansAll  = groups.transit.dans  + groups.stop.dans;
+  const tauxAll  = totalAll > 0 ? (dansAll / totalAll * 100).toFixed(1) : null;
+  const colorAll = tauxAll === null ? '#94a3b8' : tauxAll >= 90 ? '#22c55e' : tauxAll >= 70 ? '#f59e0b' : '#ef4444';
+
+  const kpiCards = Object.entries(groups).map(([type, g]) => {
+    const taux  = g.total > 0 ? (g.dans / g.total * 100).toFixed(1) : null;
+    const color = taux === null ? '#94a3b8' : taux >= 90 ? '#22c55e' : taux >= 70 ? '#f59e0b' : '#ef4444';
+    const icon  = type === 'transit' ? 'fa-gauge-high' : 'fa-circle-stop';
+    return `
+      <div class="sla-db-kpi">
+        <div class="sla-db-kpi-label"><i class="fas ${icon}"></i> ${g.label}</div>
+        <div class="sla-db-kpi-value" style="color:${color}">${taux !== null ? taux + '%' : '—'}</div>
+        <div class="sla-db-kpi-sub">${g.dans} / ${g.total} vols</div>
+        <a href="#" class="sla-db-link" data-view="sla-${type}">Voir détail →</a>
+      </div>`;
+  }).join('');
+
+  content.innerHTML = `
+    <div class="sla-db-grid">
+      ${kpiCards}
+      <div class="sla-db-kpi sla-db-kpi-global">
+        <div class="sla-db-kpi-label"><i class="fas fa-chart-pie"></i> Global</div>
+        <div class="sla-db-kpi-value" style="color:${colorAll}">${tauxAll !== null ? tauxAll + '%' : '—'}</div>
+        <div class="sla-db-kpi-sub">${dansAll} / ${totalAll} vols avec horaires</div>
+      </div>
+    </div>`;
+
+  content.querySelectorAll('.sla-db-link').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const view = a.dataset.view;
+      document.querySelector(`.sidebar-link[data-view="${view}"]`)?.click();
     });
   });
 }
