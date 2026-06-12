@@ -52,9 +52,9 @@ function populateMonthSelects() {
 }
 
 async function fetchControlesForVols(volIds, columns = 'conformite, zone, vol_id, point_controle') {
-  const CHUNK = 15;   // moins de vols par chunk → moins de lignes → moins de risque de timeout
-  const PAGE  = 500;  // en-dessous du default Supabase pour éviter les statement timeouts
-  const CONCURRENCY = 3; // peu de requêtes parallèles pour ne pas saturer la DB
+  const CHUNK = 20;
+  const PAGE  = 100;
+  const CONCURRENCY = 3;
 
   async function fetchChunk(chunk) {
     const rows = [];
@@ -129,7 +129,8 @@ function getFicheStructure(typeVol) {
 let currentUser = null;
 let allAgents = [];
 let realtimeSub = null;
-let dashboardFilters = { period: 'all', typeVol: '', agentId: '', month: '' };
+let dashboardFilters = { period: 'all', typeVol: '', agentId: '', month: '', cieCode: '' };
+let allCompagnies = [];
 
 // ---- INIT ----
 
@@ -161,7 +162,10 @@ async function init() {
   }
 
   setupNavigation();
-  await loadAgentsList();
+  await Promise.all([
+    loadAgentsList(),
+    loadAllCompagnies()
+  ]);
   initDashboardFilters();
   initAnalyseFilters();
   loadDashboard();
@@ -228,6 +232,21 @@ async function loadAgentsList() {
   populateAgentSelects();
 }
 
+async function loadAllCompagnies() {
+  if (isDemoMode) {
+    allCompagnies = [{ code: 'AT', nom: 'Royal Air Maroc' }, { code: 'AF', nom: 'Air France' }];
+  } else {
+    const { data } = await supabase.from('compagnies').select('code, nom').eq('actif', true).order('code');
+    allCompagnies = data || [];
+  }
+  // Peupler le select filtre dashboard
+  const sel = document.getElementById('dbFilterCie');
+  if (sel) {
+    sel.innerHTML = '<option value="">Toutes</option>' +
+      allCompagnies.map(c => `<option value="${c.code}">${c.code} – ${c.nom}</option>`).join('');
+  }
+}
+
 function populateAgentSelects() {
   const selects = ['filterAgent', 'filterNcAgent', 'selectAgentDetail', 'dbFilterAgent'];
   selects.forEach(id => {
@@ -258,6 +277,10 @@ function initDashboardFilters() {
   });
   document.getElementById('dbFilterAgent')?.addEventListener('change', function () {
     dashboardFilters.agentId = this.value;
+    loadDashboard();
+  });
+  document.getElementById('dbFilterCie')?.addEventListener('change', function () {
+    dashboardFilters.cieCode = this.value;
     loadDashboard();
   });
   document.getElementById('dbFilterMois')?.addEventListener('change', function () {
@@ -297,7 +320,7 @@ function initAnalyseFilters() {
 
 async function loadDashboard() {
   const today = new Date().toISOString().split('T')[0];
-  const { period, typeVol, agentId, month } = dashboardFilters;
+  const { period, typeVol, agentId, month, cieCode } = dashboardFilters;
 
   let fromDate = null, toDate = null;
   if (month) {
@@ -329,6 +352,7 @@ async function loadDashboard() {
       if (typeVol === 'MP') vols = vols.filter(v => v.type_vol?.includes('Moyen'));
       if (typeVol === 'GP') vols = vols.filter(v => v.type_vol?.includes('Gros'));
       if (agentId) vols = vols.filter(v => v.agent_id === agentId);
+      if (cieCode) vols = vols.filter(v => v.numero_vol?.match(/^[A-Z]+/)?.[0] === cieCode);
       todayCount = demoGetVols().filter(v => v.date_vol === today).length;
       const ids = new Set(vols.map(v => v.id));
       allControles = demoGetAllControles().filter(c => ids.has(c.vol_id));
@@ -341,6 +365,7 @@ async function loadDashboard() {
         if (typeVol === 'MP') q = q.in('type_vol', ['Moyen Porteur Transit', 'Moyen Porteur Stop Cmn']);
         if (typeVol === 'GP') q = q.in('type_vol', ['Gros Porteur Transit', 'Gros Porteur Stop Cmn']);
         if (agentId) q = q.eq('agent_id', agentId);
+        if (cieCode) q = q.like('numero_vol', `${cieCode}%`);
         return q;
       };
 
@@ -618,8 +643,12 @@ function renderChartTypeVol(vols, controles) {
 function renderChartCompagnies(vols) {
   const container = document.getElementById('chartCompagnies');
   if (!container) return;
+  const validCodes = new Set(allCompagnies.map(c => c.code));
   const counts = {};
-  vols.forEach(v => { const cie = v.numero_vol?.match(/^[A-Z]+/)?.[0]; if (cie) counts[cie] = (counts[cie] || 0) + 1; });
+  vols.forEach(v => {
+    const cie = v.numero_vol?.match(/^[A-Z]+/)?.[0];
+    if (cie && validCodes.has(cie)) counts[cie] = (counts[cie] || 0) + 1;
+  });
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   if (!entries.length) { container.innerHTML = '<div class="empty-state">Aucune donnée</div>'; return; }
   const max = Math.max(...entries.map(([, c]) => c), 1);
