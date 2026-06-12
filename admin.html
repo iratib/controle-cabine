@@ -96,13 +96,13 @@
       <!-- Configuration -->
       <div class="sidebar-section-label" style="margin-top:.5rem;">CONFIGURATION</div>
       <nav class="sidebar-nav">
-        <a href="#" class="sidebar-link" data-view="sla-transit">
-          <span class="sidebar-icon"><i class="fas fa-gauge-high"></i></span>
-          <span>SLA Transit</span>
+        <a href="#" class="sidebar-link" data-view="sla-config">
+          <span class="sidebar-icon"><i class="fas fa-sliders"></i></span>
+          <span>Configuration SLA</span>
         </a>
-        <a href="#" class="sidebar-link" data-view="sla-stop">
-          <span class="sidebar-icon"><i class="fas fa-circle-stop"></i></span>
-          <span>SLA Stop CMN</span>
+        <a href="#" class="sidebar-link" data-view="sla-conformite">
+          <span class="sidebar-icon"><i class="fas fa-gauge-high"></i></span>
+          <span>Conformité SLA</span>
         </a>
         <a href="#" class="sidebar-link" data-view="compagnies">
           <span class="sidebar-icon"><i class="fas fa-building"></i></span>
@@ -756,22 +756,20 @@
         </div>
       </div>
 
-      <!-- ======== SLA TRANSIT ======== -->
-      <div id="viewSlatransit" class="view" style="display:none;">
-        <div class="page-title"><h2><i class="fas fa-gauge-high"></i> SLA &amp; Nettoyage — Transit</h2></div>
+      <!-- ======== CONFIGURATION SLA ======== -->
+      <div id="viewSlaconfig" class="view" style="display:none;">
+        <div class="page-title"><h2><i class="fas fa-sliders"></i> Configuration SLA</h2></div>
 
         <div class="sla-section-title">
-          <i class="fas fa-sliders"></i> Configuration des standards — Transit
+          <i class="fas fa-gauge-high"></i> Standards — Transit
           <span class="sla-section-hint">Durée SLA et effectif agents par catégorie d'appareil. Cliquez sur Enregistrer pour sauvegarder.</span>
         </div>
-
         <div class="sla-cat-grid" id="slaConfigGridTransit">
           <div class="loading-state">Chargement…</div>
         </div>
-
         <div class="sla-save-row">
           <button class="btn btn-primary" id="btnSaveSlaTransit">
-            <i class="fas fa-floppy-disk"></i> Enregistrer la configuration
+            <i class="fas fa-floppy-disk"></i> Enregistrer Transit
           </button>
           <span class="sla-save-status" id="slaSaveStatusTransit"></span>
         </div>
@@ -779,60 +777,60 @@
         <div class="sla-divider"></div>
 
         <div class="sla-section-title">
-          <i class="fas fa-chart-bar"></i> Conformité SLA — Transit
-          <span class="sla-section-hint">Vols Transit dont la durée réelle respecte le SLA configuré.</span>
-        </div>
-
-        <div class="sla-stats-filters">
-          <label>Mois</label>
-          <select id="slaStatsMoisTransit" class="db-select"><option value="">Tous les mois</option></select>
-          <button class="btn btn-outline btn-sm" id="btnSlaStatsRefreshTransit">
-            <i class="fas fa-rotate-right"></i> Actualiser
-          </button>
-        </div>
-
-        <div id="slaStatsContentTransit">
-          <div class="loading-state">Sélectionnez un mois et cliquez Actualiser.</div>
-        </div>
-      </div>
-
-      <!-- ======== SLA STOP CMN ======== -->
-      <div id="viewSlastop" class="view" style="display:none;">
-        <div class="page-title"><h2><i class="fas fa-circle-stop"></i> SLA &amp; Nettoyage — Stop CMN</h2></div>
-
-        <div class="sla-section-title">
-          <i class="fas fa-sliders"></i> Configuration des standards — Stop CMN
+          <i class="fas fa-circle-stop"></i> Standards — Stop CMN
           <span class="sla-section-hint">Durée SLA et effectif agents par catégorie d'appareil. Cliquez sur Enregistrer pour sauvegarder.</span>
         </div>
-
         <div class="sla-cat-grid" id="slaConfigGridStop">
           <div class="loading-state">Chargement…</div>
         </div>
-
         <div class="sla-save-row">
           <button class="btn btn-primary" id="btnSaveSlaStop">
-            <i class="fas fa-floppy-disk"></i> Enregistrer la configuration
+            <i class="fas fa-floppy-disk"></i> Enregistrer Stop CMN
           </button>
           <span class="sla-save-status" id="slaSaveStatusStop"></span>
+        </div>
+      </div>
+
+      <!-- ======== CONFORMITÉ SLA ======== -->
+      <div id="viewSlaconformite" class="view" style="display:none;">
+        <div class="page-title"><h2><i class="fas fa-gauge-high"></i> Conformité SLA</h2></div>
+
+        <!-- Section Transit -->
+        <div id="slaConformiteTransitSection">
+          <div class="sla-section-title">
+            <i class="fas fa-gauge-high"></i> Conformité SLA — Transit
+            <span class="sla-section-hint">Vols Transit dont la durée réelle respecte le SLA configuré.</span>
+          </div>
+          <div class="sla-stats-filters">
+            <label>Mois</label>
+            <select id="slaStatsMoisTransit" class="db-select"><option value="">Tous les mois</option></select>
+            <button class="btn btn-outline btn-sm" id="btnSlaStatsRefreshTransit">
+              <i class="fas fa-rotate-right"></i> Actualiser
+            </button>
+          </div>
+          <div id="slaStatsContentTransit">
+            <div class="loading-state">Chargement…</div>
+          </div>
         </div>
 
         <div class="sla-divider"></div>
 
-        <div class="sla-section-title">
-          <i class="fas fa-chart-bar"></i> Conformité SLA — Stop CMN
-          <span class="sla-section-hint">Vols Stop CMN dont la durée réelle respecte le SLA configuré.</span>
-        </div>
-
-        <div class="sla-stats-filters">
-          <label>Mois</label>
-          <select id="slaStatsMoisStop" class="db-select"><option value="">Tous les mois</option></select>
-          <button class="btn btn-outline btn-sm" id="btnSlaStatsRefreshStop">
-            <i class="fas fa-rotate-right"></i> Actualiser
-          </button>
-        </div>
-
-        <div id="slaStatsContentStop">
-          <div class="loading-state">Sélectionnez un mois et cliquez Actualiser.</div>
+        <!-- Section Stop CMN -->
+        <div id="slaConformiteStopSection">
+          <div class="sla-section-title">
+            <i class="fas fa-circle-stop"></i> Conformité SLA — Stop CMN
+            <span class="sla-section-hint">Vols Stop CMN dont la durée réelle respecte le SLA configuré.</span>
+          </div>
+          <div class="sla-stats-filters">
+            <label>Mois</label>
+            <select id="slaStatsMoisStop" class="db-select"><option value="">Tous les mois</option></select>
+            <button class="btn btn-outline btn-sm" id="btnSlaStatsRefreshStop">
+              <i class="fas fa-rotate-right"></i> Actualiser
+            </button>
+          </div>
+          <div id="slaStatsContentStop">
+            <div class="loading-state">Chargement…</div>
+          </div>
         </div>
       </div>
 

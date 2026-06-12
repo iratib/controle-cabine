@@ -191,8 +191,8 @@ function setupNavigation() {
       else if (view === 'export') setupExportView();
       else if (view === 'analyse-mp') loadAnalyseType('MP');
       else if (view === 'analyse-gp') loadAnalyseType('GP');
-      else if (view === 'sla-transit') loadSlaPageView('transit');
-      else if (view === 'sla-stop')    loadSlaPageView('stop');
+      else if (view === 'sla-config')     loadSlaConfigView();
+      else if (view === 'sla-conformite') loadSlaConformiteView();
       else if (view === 'compagnies') loadCompagniesView();
     });
   });
@@ -205,8 +205,10 @@ function capitalize(str) {
     'nc': 'NC', 'agents': 'Agents', 'export': 'Export',
     'analyse-mp': 'AnalyseMP', 'analysemp': 'AnalyseMP',
     'analyse-gp': 'AnalyseGP', 'analysegp': 'AnalyseGP',
-    'sla-transit': 'Slatransit',
-    'sla-stop':    'Slastop',
+    'sla-config':     'Slaconfig',
+    'slaconfig':      'Slaconfig',
+    'sla-conformite': 'Slaconformite',
+    'slaconformite':  'Slaconformite',
     'compagnies': 'Compagnies'
   };
   return map[str] || str.charAt(0).toUpperCase() + str.slice(1);
@@ -403,7 +405,7 @@ async function loadDashboard() {
 
     renderChartVolsParAgent(vols);
     renderChartZones(allControles);
-    renderChartEvolution(period, fromDate, toDate, month);
+    renderChartEvolution(period, fromDate, toDate, month, vols, allControles);
     renderChartDonutConformite(C, NC);
     renderChartStatuts(vols);
     renderChartTypeVol(vols, allControles);
@@ -468,68 +470,80 @@ function renderChartZones(controles) {
   container.innerHTML = html;
 }
 
-async function renderChartEvolution(period, fromDate, toDate, month) {
+function renderChartEvolution(period, fromDate, toDate, month, vols, controles) {
   const container = document.getElementById('chartEvolution');
-  const today = new Date().toISOString().split('T')[0];
-
-  let days = [];
-  let startDate, endDate;
-
-  if (month) {
-    const range = monthToRange(month);
-    startDate = range.first;
-    endDate = range.last;
-    const d = new Date(startDate + 'T00:00:00');
-    const end = new Date(endDate + 'T00:00:00');
-    while (d <= end) { days.push(d.toISOString().split('T')[0]); d.setDate(d.getDate() + 1); }
-  } else {
-    const nDays = period === 'today' ? 1 : period === '7' ? 7 : 30;
-    for (let i = nDays - 1; i >= 0; i--) {
-      const d = new Date(); d.setDate(d.getDate() - i);
-      days.push(d.toISOString().split('T')[0]);
-    }
-    startDate = fromDate || days[0];
-    endDate = today;
+  if (!vols || !vols.length) {
+    container.innerHTML = '<div class="empty-state">Aucune donnée</div>';
+    return;
   }
 
-  let volData;
-  if (isDemoMode) {
-    volData = demoGetVols().map(v => ({ date_vol: v.date_vol }));
-  } else {
-    const allDates = [];
-    let evOffset = 0;
-    while (true) {
-      const { data: pg } = await supabase.from('vols').select('date_vol')
-        .gte('date_vol', startDate).lte('date_vol', endDate)
-        .range(evOffset, evOffset + 999);
-      if (!pg || pg.length === 0) break;
-      allDates.push(...pg);
-      if (pg.length < 1000) break;
-      evOffset += 1000;
+  // Choisir le regroupement selon la période
+  const useMonth = period === 'all' || (!month && !fromDate);
+  const useWeek  = period === '30' || (fromDate && !month);
+  // Pour un mois sélectionné ou 7 jours → par jour
+
+  const volToGroup = {};
+  const groupLabels = {};
+
+  vols.forEach(v => {
+    if (!v.date_vol) return;
+    let key, label;
+    if (useMonth) {
+      key   = v.date_vol.slice(0, 7);
+      const [y, m] = key.split('-');
+      label = MONTH_LABELS[parseInt(m) - 1] + ' ' + y;
+    } else if (useWeek) {
+      const d   = new Date(v.date_vol + 'T00:00:00');
+      const day = d.getDay() === 0 ? 6 : d.getDay() - 1;
+      const mon = new Date(d); mon.setDate(d.getDate() - day);
+      key   = mon.toISOString().split('T')[0];
+      label = mon.getDate().toString().padStart(2,'0') + '/' + String(mon.getMonth()+1).padStart(2,'0');
+    } else {
+      key   = v.date_vol;
+      label = v.date_vol.slice(5).replace('-', '/');
     }
-    volData = allDates;
-  }
-
-  const counts = {};
-  days.forEach(d => { counts[d] = 0; });
-  volData.forEach(v => { if (counts[v.date_vol] !== undefined) counts[v.date_vol]++; });
-
-  const nDays = days.length;
-  const max = Math.max(...Object.values(counts), 1);
-  const step = Math.ceil(nDays / 10);
-  let html = '<div class="bar-chart-v">';
-  days.forEach((day, i) => {
-    const count = counts[day];
-    const pct = Math.round((count / max) * 100);
-    const showLabel = nDays <= 7 || i % step === 0 || i === days.length - 1;
-    html += `<div class="bar-v-col">
-      <div class="bar-v-value">${count || ''}</div>
-      <div class="bar-v-track"><div class="bar-v-fill" style="height:${pct}%"></div></div>
-      <div class="bar-v-label">${showLabel ? day.slice(5) : ''}</div>
-    </div>`;
+    volToGroup[v.id] = key;
+    groupLabels[key] = label;
   });
-  html += '</div>';
-  container.innerHTML = html;
+
+  // Agréger vols et conformité par groupe
+  const byGroup = {};
+  vols.forEach(v => {
+    const k = volToGroup[v.id];
+    if (!k) return;
+    if (!byGroup[k]) byGroup[k] = { insp: 0, C: 0, NC: 0 };
+    byGroup[k].insp++;
+  });
+  (controles || []).forEach(c => {
+    const k = volToGroup[c.vol_id];
+    if (!k || !byGroup[k]) return;
+    if (c.conformite === 'C')  byGroup[k].C++;
+    if (c.conformite === 'NC') byGroup[k].NC++;
+  });
+
+  const keys = Object.keys(byGroup).sort();
+  if (!keys.length) { container.innerHTML = '<div class="empty-state">Aucune donnée</div>'; return; }
+
+  const data = keys.map(k => ({
+    label: groupLabels[k] || k,
+    insp:  byGroup[k].insp,
+    taux:  (byGroup[k].C + byGroup[k].NC) > 0
+           ? byGroup[k].C / (byGroup[k].C + byGroup[k].NC) * 100
+           : null,
+    partial: false
+  }));
+
+  container.innerHTML = `
+    <div class="evol-db-wrap">
+      <div class="evol-db-legend">
+        <span><span class="evol-dot evol-dot-bar"></span> Inspections</span>
+        <span><span class="evol-dot evol-dot-line"></span> Taux conformité (%)</span>
+      </div>
+      <div class="evol-db-label">Inspections réalisées</div>
+      ${buildEvolBarSVG(data)}
+      <div class="evol-db-label" style="margin-top:1rem;">Taux de conformité (%)</div>
+      ${buildEvolLineSVG(data)}
+    </div>`;
 }
 
 function renderTopNC(controles) {
@@ -1182,11 +1196,14 @@ async function loadAgentsTable() {
       <td><span class="statut-badge ${ROLE_COLORS[a.role] || ''}">${ROLE_LABELS[a.role] || a.role}</span></td>
       <td>${Array.isArray(a.vols) && a.vols[0]?.count !== undefined ? a.vols[0].count : (a.vols || []).length}</td>
       <td>${a.actif ? '<span class="statut-badge statut-valide">Actif</span>' : '<span class="statut-badge statut-rejete">Inactif</span>'}</td>
-      <td style="display:flex;gap:6px;">
+      <td style="display:flex;gap:6px;flex-wrap:wrap;">
         ${a.actif
           ? `<button class="btn btn-outline btn-xs btn-danger" onclick="toggleAgent('${a.id}', false)">Désactiver</button>`
           : `<button class="btn btn-success btn-xs" onclick="toggleAgent('${a.id}', true)">Activer</button>`
         }
+        ${(isAdmin || currentUser?.role === 'chef') && a.role === 'agent'
+          ? `<button class="btn btn-warning btn-xs" onclick="resetPasswordAgent('${a.id}','${a.nom.replace(/'/g, "\\'")}')"><i class="fas fa-key"></i> CABINE</button>`
+          : ''}
         ${isAdmin ? `<button class="btn btn-danger btn-xs" onclick="confirmDeleteUser('${a.id}','${a.nom.replace(/'/g, "\\'")}')">Supprimer</button>` : ''}
       </td>
     </tr>
@@ -1199,6 +1216,26 @@ async function loadAgentsTable() {
     </table>
   `;
 }
+
+window.resetPasswordAgent = async function(agentId, nom) {
+  if (!confirm(`Réinitialiser le mot de passe de ${nom} à "CABINE" ?`)) return;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(
+      'https://htkdryptzdvztcgjgfax.supabase.co/functions/v1/reset-password',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ userId: agentId })
+      }
+    );
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Erreur serveur');
+    showToast(`Mot de passe de ${nom} réinitialisé à "CABINE".`, 'success', 4000);
+  } catch (err) {
+    showToast(err.message || 'Erreur réinitialisation', 'error');
+  }
+};
 
 window.toggleAgent = async function(agentId, actif) {
   if (isDemoMode) {
@@ -1228,7 +1265,7 @@ function setupModals() {
   document.getElementById('btnAjouterAgent')?.addEventListener('click', () => {
     document.getElementById('agentNomField').value = '';
     document.getElementById('agentMatriculeField').value = '';
-    document.getElementById('agentPasswordField').value = '';
+    document.getElementById('agentPasswordField').value = 'CABINE';
     document.getElementById('agentRoleField').value = 'agent';
     document.getElementById('agentModalError').style.display = 'none';
     document.getElementById('modalAgent').style.display = 'flex';
@@ -2511,28 +2548,44 @@ const SLA_STATS_TYPES = [
 ];
 
 let slaConfigCache = {};
+let _pendingSlaAnchor = null;
 
-async function loadSlaPageView(type) {
-  const S = type === 'transit' ? 'Transit' : 'Stop';
-  const cats = type === 'transit' ? SLA_CATEGORIES_TRANSIT : SLA_CATEGORIES_STOP;
-  const storageKey = `sla_detail_${type}`;
-
-  const sel = document.getElementById(`slaStatsMois${S}`);
-  if (sel && sel.options.length <= 1) {
-    getMonthsList().forEach(({ value, label }) => {
-      const o = document.createElement('option'); o.value = value; o.textContent = label; sel.appendChild(o);
-    });
-  }
-
+async function loadSlaConfigView() {
   if (!isDemoMode) {
     const { data } = await supabase.from('sla_config').select('*');
     (data || []).forEach(r => { slaConfigCache[r.type_vol] = r; });
   }
+  renderSlaConfigGrid(SLA_CATEGORIES_TRANSIT, 'sla_detail_transit', 'Transit');
+  renderSlaConfigGrid(SLA_CATEGORIES_STOP,    'sla_detail_stop',    'Stop');
+  const btnT = document.getElementById('btnSaveSlaTransit');
+  const btnS = document.getElementById('btnSaveSlaStop');
+  if (btnT) btnT.onclick = () => saveSlaConfig(SLA_CATEGORIES_TRANSIT, 'sla_detail_transit', 'Transit');
+  if (btnS) btnS.onclick = () => saveSlaConfig(SLA_CATEGORIES_STOP,    'sla_detail_stop',    'Stop');
+}
 
-  renderSlaConfigGrid(cats, storageKey, S);
+function loadSlaConformiteView() {
+  const anchor = _pendingSlaAnchor;
+  _pendingSlaAnchor = null;
 
-  document.getElementById(`btnSaveSla${S}`)?.addEventListener('click', () => saveSlaConfig(cats, storageKey, S));
-  document.getElementById(`btnSlaStatsRefresh${S}`)?.addEventListener('click', () => loadSlaStats(type, S));
+  ['Transit', 'Stop'].forEach(S => {
+    const type = S === 'Transit' ? 'transit' : 'stop';
+    const sel = document.getElementById(`slaStatsMois${S}`);
+    if (sel && sel.options.length <= 1) {
+      getMonthsList().forEach(({ value, label }) => {
+        const o = document.createElement('option'); o.value = value; o.textContent = label; sel.appendChild(o);
+      });
+    }
+    const btn = document.getElementById(`btnSlaStatsRefresh${S}`);
+    if (btn) btn.onclick = () => loadSlaStats(type, S);
+    loadSlaStats(type, S);
+  });
+
+  if (anchor) {
+    const sectionId = anchor === 'transit' ? 'slaConformiteTransitSection' : 'slaConformiteStopSection';
+    setTimeout(() => {
+      document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+  }
 }
 
 function renderSlaConfigGrid(cats, storageKey, suffix) {
@@ -2557,7 +2610,7 @@ function renderSlaConfigGrid(cats, storageKey, suffix) {
         <div class="sla-cat-header">
           <div class="sla-cat-title-row">
             <span class="sla-cat-label">${t.label}</span>
-            <span class="sla-cat-type-badge">TRANSIT</span>
+            <span class="sla-cat-type-badge">${suffix === 'Transit' ? 'TRANSIT' : 'STOP CMN'}</span>
           </div>
           <div class="sla-cat-seats"><i class="fas fa-chair"></i> ${t.seats}</div>
         </div>
@@ -2566,7 +2619,7 @@ function renderSlaConfigGrid(cats, storageKey, suffix) {
           <div class="sla-cat-avions">${avionTags}</div>
 
           <div class="sla-cat-section">
-            <div class="sla-cat-section-label"><i class="fas fa-clock"></i> SLA Transit</div>
+            <div class="sla-cat-section-label"><i class="fas fa-clock"></i> SLA ${suffix === 'Transit' ? 'Transit' : 'Stop CMN'}</div>
             <div class="sla-sla-range">
               <input type="number" class="sla-input sla-input-sm" id="sla_min_${t.key}" value="${slaMin}" min="1" max="999" />
               <span class="sla-range-sep">→</span>
@@ -2959,7 +3012,7 @@ async function loadDashboardSla() {
         <div class="sla-db-kpi-label"><i class="fas ${icon}"></i> ${g.label}</div>
         <div class="sla-db-kpi-value" style="color:${color}">${taux !== null ? taux + '%' : '—'}</div>
         <div class="sla-db-kpi-sub">${g.dans} / ${g.total} vols</div>
-        <a href="#" class="sla-db-link" data-view="sla-${type}">Voir détail →</a>
+        <a href="#" class="sla-db-link" data-anchor="${type}">Voir détail →</a>
       </div>`;
   }).join('');
 
@@ -2970,14 +3023,20 @@ async function loadDashboardSla() {
         <div class="sla-db-kpi-label"><i class="fas fa-chart-pie"></i> Global</div>
         <div class="sla-db-kpi-value" style="color:${colorAll}">${tauxAll !== null ? tauxAll + '%' : '—'}</div>
         <div class="sla-db-kpi-sub">${dansAll} / ${totalAll} vols avec horaires</div>
+        <a href="#" class="sla-db-link" data-anchor="">Voir tout →</a>
       </div>
     </div>`;
 
   content.querySelectorAll('.sla-db-link').forEach(a => {
     a.addEventListener('click', e => {
       e.preventDefault();
-      const view = a.dataset.view;
-      document.querySelector(`.sidebar-link[data-view="${view}"]`)?.click();
+      _pendingSlaAnchor = a.dataset.anchor || null;
+      document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
+      document.getElementById('viewSlaconformite').style.display = 'block';
+      document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
+      document.querySelector('.sidebar-link[data-view="sla-conformite"]')?.classList.add('active');
+      document.getElementById('sidebar')?.classList.remove('sidebar-open');
+      loadSlaConformiteView();
     });
   });
 }

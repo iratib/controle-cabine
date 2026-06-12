@@ -356,6 +356,7 @@ async function init() {
   document.getElementById('dateVol').valueAsDate = new Date();
 
   setupNavigation();
+  setupChangerMdp();
   setupMesControlesTabs();
   await loadCompagniesSelect();
   setupFormEntete();
@@ -366,6 +367,62 @@ async function init() {
   // Sidebar mobile
   document.getElementById('btnMenu').addEventListener('click', () => {
     document.getElementById('sidebar').classList.toggle('sidebar-open');
+  });
+}
+
+// ---- CHANGER MOT DE PASSE ----
+
+function setupChangerMdp() {
+  const modal   = document.getElementById('modalChangerMdp');
+  const errEl   = document.getElementById('mdpModalError');
+  const btnOpen = document.getElementById('btnMonCompte');
+  const btnAnn  = document.getElementById('btnAnnulerMdp');
+  const btnConf = document.getElementById('btnConfirmerMdp');
+
+  btnOpen?.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('mdpNouveauField').value  = '';
+    document.getElementById('mdpConfirmField').value  = '';
+    errEl.style.display = 'none';
+    modal.style.display = 'flex';
+    document.getElementById('sidebar').classList.remove('sidebar-open');
+  });
+
+  btnAnn?.addEventListener('click', () => { modal.style.display = 'none'; });
+
+  btnConf?.addEventListener('click', async () => {
+    const nouveau  = document.getElementById('mdpNouveauField').value.trim();
+    const confirm  = document.getElementById('mdpConfirmField').value.trim();
+    errEl.style.display = 'none';
+
+    if (!nouveau || nouveau.length < 6) {
+      errEl.textContent = 'Le mot de passe doit contenir au moins 6 caractères.';
+      errEl.style.display = 'block'; return;
+    }
+    if (nouveau !== confirm) {
+      errEl.textContent = 'Les deux mots de passe ne correspondent pas.';
+      errEl.style.display = 'block'; return;
+    }
+
+    const btnText    = document.getElementById('btnConfirmerMdpText');
+    const btnSpinner = document.getElementById('btnConfirmerMdpSpinner');
+    btnConf.disabled = true;
+    btnText.style.display    = 'none';
+    btnSpinner.style.display = 'inline';
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password: nouveau });
+      if (error) throw error;
+      modal.style.display = 'none';
+      showToast('Mot de passe modifié avec succès.', 'success', 4000);
+    } catch (err) {
+      errEl.textContent = err.message || 'Erreur lors du changement de mot de passe.';
+      errEl.style.display = 'block';
+    } finally {
+      btnConf.disabled = false;
+      btnText.style.display    = 'inline';
+      btnSpinner.style.display = 'none';
+    }
   });
 }
 
