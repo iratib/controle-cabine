@@ -10,6 +10,79 @@ import {
   demoGetAllControles, demoGetAgents, demoToggleAgent, demoCreateAgent
 } from './demo-db.js';
 
+const MONTH_NAMES_FULL = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+function getMonthsList() {
+  const months = [];
+  const start = new Date(2026, 1, 1);
+  const now = new Date();
+  let d = new Date(now.getFullYear(), now.getMonth(), 1);
+  while (d >= start) {
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    months.push({ value, label: MONTH_NAMES_FULL[d.getMonth()] + ' ' + d.getFullYear() });
+    d.setMonth(d.getMonth() - 1);
+  }
+  return months;
+}
+
+function monthToRange(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const first = `${y}-${String(m).padStart(2,'0')}-01`;
+  const lastDay = new Date(y, m, 0);
+  const last = `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2,'0')}-${String(lastDay.getDate()).padStart(2,'0')}`;
+  return { first, last };
+}
+
+function populateMonthSelects() {
+  const months = getMonthsList();
+  const ids = ['dbFilterMois', 'filterMois', 'selectAgentMois', 'filterNcMois', 'mpFilterFrom', 'mpFilterTo', 'gpFilterFrom', 'gpFilterTo'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const first = el.options[0] || null;
+    el.innerHTML = '';
+    if (first) el.appendChild(first);
+    months.forEach(({ value, label }) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      el.appendChild(opt);
+    });
+  });
+}
+
+async function fetchControlesForVols(volIds, columns = 'conformite, zone, vol_id, point_controle') {
+  const CHUNK = 15;   // moins de vols par chunk → moins de lignes → moins de risque de timeout
+  const PAGE  = 500;  // en-dessous du default Supabase pour éviter les statement timeouts
+  const CONCURRENCY = 3; // peu de requêtes parallèles pour ne pas saturer la DB
+
+  async function fetchChunk(chunk) {
+    const rows = [];
+    let offset = 0;
+    while (true) {
+      const { data, error } = await supabase.from('controles')
+        .select(columns).in('vol_id', chunk).order('id').range(offset, offset + PAGE - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      rows.push(...data);
+      if (data.length < PAGE) break;
+      offset += PAGE;
+    }
+    return rows;
+  }
+
+  const chunks = [];
+  for (let i = 0; i < volIds.length; i += CHUNK) chunks.push(volIds.slice(i, i + CHUNK));
+
+  const results = [];
+  for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+    const batch = chunks.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.all(batch.map(fetchChunk));
+    batchResults.forEach(r => results.push(...r));
+  }
+  return results;
+}
+
 const FICHE_STRUCTURES = {
   'Moyen Porteur Transit': [
     { zone: 'Cockpit', partie: 'Équipage', sous_zone: null, icon: '🛩', points: ['Sol propre (sans résidus, poussières)','Tablettes pilotes propres','Poubelles vidées','Pare-brise intérieur essuyé','Aucun objet oublié (FOD)'] },
@@ -56,7 +129,7 @@ function getFicheStructure(typeVol) {
 let currentUser = null;
 let allAgents = [];
 let realtimeSub = null;
-let dashboardFilters = { period: '30', typeVol: '', agentId: '' };
+let dashboardFilters = { period: 'all', typeVol: '', agentId: '', month: '' };
 
 // ---- INIT ----
 
@@ -88,10 +161,9 @@ async function init() {
   }
 
   setupNavigation();
-  document.getElementById('btnRefreshMP')?.addEventListener('click', () => loadAnalyseType('MP'));
-  document.getElementById('btnRefreshGP')?.addEventListener('click', () => loadAnalyseType('GP'));
   await loadAgentsList();
   initDashboardFilters();
+  initAnalyseFilters();
   loadDashboard();
   if (!isDemoMode) setupRealtime();
   setupModals();
@@ -123,6 +195,8 @@ function setupNavigation() {
       else if (view === 'export') setupExportView();
       else if (view === 'analyse-mp') loadAnalyseType('MP');
       else if (view === 'analyse-gp') loadAnalyseType('GP');
+      else if (view === 'sla') loadSlaView();
+      else if (view === 'compagnies') loadCompagniesView();
     });
   });
 }
@@ -133,7 +207,9 @@ function capitalize(str) {
     'par-agent': 'ParAgent', 'paragent': 'ParAgent',
     'nc': 'NC', 'agents': 'Agents', 'export': 'Export',
     'analyse-mp': 'AnalyseMP', 'analysemp': 'AnalyseMP',
-    'analyse-gp': 'AnalyseGP', 'analysegp': 'AnalyseGP'
+    'analyse-gp': 'AnalyseGP', 'analysegp': 'AnalyseGP',
+    'sla': 'Sla',
+    'compagnies': 'Compagnies'
   };
   return map[str] || str.charAt(0).toUpperCase() + str.slice(1);
 }
@@ -141,6 +217,7 @@ function capitalize(str) {
 // ---- CHARGEMENT AGENTS ----
 
 async function loadAgentsList() {
+  populateMonthSelects();
   if (isDemoMode) {
     allAgents = demoGetAgents();
     populateAgentSelects();
@@ -183,27 +260,72 @@ function initDashboardFilters() {
     dashboardFilters.agentId = this.value;
     loadDashboard();
   });
+  document.getElementById('dbFilterMois')?.addEventListener('change', function () {
+    dashboardFilters.month = this.value;
+    if (this.value) {
+      document.querySelectorAll('.db-pill[data-filter="period"]').forEach(b => b.classList.remove('active'));
+    } else {
+      document.querySelector('.db-pill[data-filter="period"][data-value="all"]')?.classList.add('active');
+      dashboardFilters.period = 'all';
+    }
+    loadDashboard();
+  });
+
+  document.getElementById('filterMois')?.addEventListener('change', function () {
+    if (!this.value) { document.getElementById('filterDateDe').value = ''; document.getElementById('filterDateA').value = ''; return; }
+    const { first, last } = monthToRange(this.value);
+    document.getElementById('filterDateDe').value = first;
+    document.getElementById('filterDateA').value = last;
+  });
+}
+
+function initAnalyseFilters() {
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  ['mp', 'gp'].forEach(prefix => {
+    const fromEl = document.getElementById(`${prefix}FilterFrom`);
+    const toEl   = document.getElementById(`${prefix}FilterTo`);
+    const type   = prefix.toUpperCase();
+    if (fromEl) { fromEl.value = '2026-02'; }
+    if (toEl)   { toEl.value   = currentMonth; }
+    fromEl?.addEventListener('change', () => loadAnalyseType(type));
+    toEl?.addEventListener('change',   () => loadAnalyseType(type));
+    document.getElementById(`btnRefresh${type}`)?.addEventListener('click', () => loadAnalyseType(type));
+  });
 }
 
 async function loadDashboard() {
   const today = new Date().toISOString().split('T')[0];
-  const { period, typeVol, agentId } = dashboardFilters;
+  const { period, typeVol, agentId, month } = dashboardFilters;
 
-  let fromDate = null;
-  if (period === 'today') fromDate = today;
+  let fromDate = null, toDate = null;
+  if (month) {
+    const range = monthToRange(month);
+    fromDate = range.first;
+    toDate = range.last;
+  } else if (period === 'today') { fromDate = today; toDate = today; }
   else if (period === '7') { const d = new Date(); d.setDate(d.getDate() - 6); fromDate = d.toISOString().split('T')[0]; }
   else if (period === '30') { const d = new Date(); d.setDate(d.getDate() - 29); fromDate = d.toISOString().split('T')[0]; }
 
-  const periodTitles = { today: "Aujourd'hui", '7': '7 derniers jours', '30': '30 derniers jours', all: 'Tout' };
   const titleEl = document.getElementById('chartEvolutionTitle');
-  if (titleEl) titleEl.textContent = 'Évolution — ' + (periodTitles[period] || '30 derniers jours');
+  if (titleEl) {
+    if (month) {
+      const [y, m] = month.split('-');
+      titleEl.textContent = 'Évolution — ' + MONTH_NAMES_FULL[parseInt(m) - 1] + ' ' + y;
+    } else {
+      const periodTitles = { today: "Aujourd'hui", '7': '7 derniers jours', '30': '30 derniers jours', all: 'Tout' };
+      titleEl.textContent = 'Évolution — ' + (periodTitles[period] || '30 derniers jours');
+    }
+  }
 
   try {
     let vols = [], allControles = [], todayCount = 0;
 
     if (isDemoMode) {
       vols = demoGetVols();
-      if (fromDate) vols = vols.filter(v => v.date_vol >= fromDate && v.date_vol <= today);
+      if (fromDate) vols = vols.filter(v => v.date_vol >= fromDate);
+      if (toDate) vols = vols.filter(v => v.date_vol <= toDate);
       if (typeVol === 'MP') vols = vols.filter(v => v.type_vol?.includes('Moyen'));
       if (typeVol === 'GP') vols = vols.filter(v => v.type_vol?.includes('Gros'));
       if (agentId) vols = vols.filter(v => v.agent_id === agentId);
@@ -211,25 +333,44 @@ async function loadDashboard() {
       const ids = new Set(vols.map(v => v.id));
       allControles = demoGetAllControles().filter(c => ids.has(c.vol_id));
     } else {
-      let q = supabase.from('vols').select('id, statut, date_vol, type_vol, numero_vol, agent_id, profiles(nom)');
-      if (fromDate) q = q.gte('date_vol', fromDate);
-      if (period === 'today') q = q.lte('date_vol', today);
-      if (typeVol === 'MP') q = q.in('type_vol', ['Moyen Porteur Transit', 'Moyen Porteur Stop Cmn']);
-      if (typeVol === 'GP') q = q.in('type_vol', ['Gros Porteur Transit', 'Gros Porteur Stop Cmn']);
-      if (agentId) q = q.eq('agent_id', agentId);
+      // Construire les filtres communs
+      const applyFilters = q => {
+        if (fromDate) q = q.gte('date_vol', fromDate);
+        if (toDate) q = q.lte('date_vol', toDate);
+        else if (period === 'today') q = q.lte('date_vol', today);
+        if (typeVol === 'MP') q = q.in('type_vol', ['Moyen Porteur Transit', 'Moyen Porteur Stop Cmn']);
+        if (typeVol === 'GP') q = q.in('type_vol', ['Gros Porteur Transit', 'Gros Porteur Stop Cmn']);
+        if (agentId) q = q.eq('agent_id', agentId);
+        return q;
+      };
 
-      const [{ data: v }, { count: tc }] = await Promise.all([
-        q,
+      const [{ count: totalCount }, { count: tc }] = await Promise.all([
+        applyFilters(supabase.from('vols').select('*', { count: 'exact', head: true })),
         supabase.from('vols').select('*', { count: 'exact', head: true }).eq('date_vol', today)
       ]);
-      vols = v || [];
       todayCount = tc ?? 0;
 
+      // Paginate vols to bypass the 1000-row Supabase cap
+      const allDashVols = [];
+      let dbOffset = 0;
+      while (true) {
+        const { data: vPage, error: vErr } = await applyFilters(
+          supabase.from('vols')
+            .select('id, statut, date_vol, type_vol, numero_vol, agent_id, profiles(nom)')
+            .order('date_vol')
+        ).range(dbOffset, dbOffset + 999);
+        if (vErr) throw vErr;
+        if (!vPage || vPage.length === 0) break;
+        allDashVols.push(...vPage);
+        if (vPage.length < 1000) break;
+        dbOffset += 1000;
+      }
+      vols = allDashVols;
+
+      document.getElementById('statTotalVols').textContent = totalCount ?? vols.length;
+
       if (vols.length) {
-        const { data: c } = await supabase.from('controles')
-          .select('conformite, zone, vol_id, point_controle')
-          .in('vol_id', vols.map(v => v.id));
-        allControles = c || [];
+        allControles = await fetchControlesForVols(vols.map(v => v.id));
       }
     }
 
@@ -237,14 +378,13 @@ async function loadDashboard() {
     const NC = allControles.filter(c => c.conformite === 'NC').length;
     const taux = (C + NC) > 0 ? ((C / (C + NC)) * 100).toFixed(1) : '—';
 
-    document.getElementById('statTotalVols').textContent = vols.length;
     document.getElementById('statAujourd').textContent = todayCount;
     document.getElementById('statTaux').textContent = taux !== '—' ? taux + '%' : '—';
     document.getElementById('statNcTotal').textContent = NC;
 
     renderChartVolsParAgent(vols);
     renderChartZones(allControles);
-    renderChartEvolution(period, fromDate);
+    renderChartEvolution(period, fromDate, toDate, month);
     renderChartDonutConformite(C, NC);
     renderChartStatuts(vols);
     renderChartTypeVol(vols, allControles);
@@ -308,30 +448,53 @@ function renderChartZones(controles) {
   container.innerHTML = html;
 }
 
-async function renderChartEvolution(period, fromDate) {
+async function renderChartEvolution(period, fromDate, toDate, month) {
   const container = document.getElementById('chartEvolution');
   const today = new Date().toISOString().split('T')[0];
-  const nDays = period === 'today' ? 1 : period === '7' ? 7 : 30;
 
-  const days = [];
-  for (let i = nDays - 1; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    days.push(d.toISOString().split('T')[0]);
+  let days = [];
+  let startDate, endDate;
+
+  if (month) {
+    const range = monthToRange(month);
+    startDate = range.first;
+    endDate = range.last;
+    const d = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    while (d <= end) { days.push(d.toISOString().split('T')[0]); d.setDate(d.getDate() + 1); }
+  } else {
+    const nDays = period === 'today' ? 1 : period === '7' ? 7 : 30;
+    for (let i = nDays - 1; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      days.push(d.toISOString().split('T')[0]);
+    }
+    startDate = fromDate || days[0];
+    endDate = today;
   }
 
   let volData;
   if (isDemoMode) {
     volData = demoGetVols().map(v => ({ date_vol: v.date_vol }));
   } else {
-    const startDate = fromDate || days[0];
-    const { data } = await supabase.from('vols').select('date_vol').gte('date_vol', startDate).lte('date_vol', today);
-    volData = data || [];
+    const allDates = [];
+    let evOffset = 0;
+    while (true) {
+      const { data: pg } = await supabase.from('vols').select('date_vol')
+        .gte('date_vol', startDate).lte('date_vol', endDate)
+        .range(evOffset, evOffset + 999);
+      if (!pg || pg.length === 0) break;
+      allDates.push(...pg);
+      if (pg.length < 1000) break;
+      evOffset += 1000;
+    }
+    volData = allDates;
   }
 
   const counts = {};
   days.forEach(d => { counts[d] = 0; });
   volData.forEach(v => { if (counts[v.date_vol] !== undefined) counts[v.date_vol]++; });
 
+  const nDays = days.length;
   const max = Math.max(...Object.values(counts), 1);
   const step = Math.ceil(nDays / 10);
   let html = '<div class="bar-chart-v">';
@@ -547,7 +710,7 @@ async function loadTousControles(filters = {}) {
     } else {
       let query = supabase
         .from('vols')
-        .select('*, profiles(nom, matricule), controles(conformite)')
+        .select('*, profiles(nom, matricule)')
         .order('date_vol', { ascending: false });
 
       if (filters.agent) query = query.eq('agent_id', filters.agent);
@@ -559,6 +722,27 @@ async function loadTousControles(filters = {}) {
       const { data, error } = await query;
       if (error) throw error;
       vols = data || [];
+
+      if (vols.length) {
+        const volIds = vols.map(v => v.id);
+        const CHUNK = 50;
+        const allCtrl = [];
+        for (let i = 0; i < volIds.length; i += CHUNK) {
+          const chunk = volIds.slice(i, i + CHUNK);
+          const { data: ctrlData, error: ctrlError } = await supabase
+            .from('controles')
+            .select('vol_id, conformite')
+            .in('vol_id', chunk);
+          if (ctrlError) throw ctrlError;
+          allCtrl.push(...(ctrlData || []));
+        }
+        const ctrlMap = {};
+        allCtrl.forEach(c => {
+          if (!ctrlMap[c.vol_id]) ctrlMap[c.vol_id] = [];
+          ctrlMap[c.vol_id].push(c);
+        });
+        vols = vols.map(v => ({ ...v, controles: ctrlMap[v.id] || [] }));
+      }
     }
 
     if (!vols.length) {
@@ -589,6 +773,7 @@ async function loadTousControles(filters = {}) {
           <td>${badge}</td>
           <td class="actions-cell">
             <button class="btn btn-outline btn-xs" onclick="adminViewFiche('${vol.id}', '${vol.numero_vol}', '${vol.date_vol}')">Voir</button>
+            ${['admin','chef'].includes(currentUser?.role) ? `<button class="btn btn-danger btn-xs" onclick="adminConfirmDeleteVol('${vol.id}','${vol.numero_vol}')">🗑</button>` : ''}
           </td>
         </tr>
       `;
@@ -731,43 +916,76 @@ window.adminViewFiche = async function(volId, numero, date) {
 
 function setupParAgent() {
   const select = document.getElementById('selectAgentDetail');
-  select.addEventListener('change', async () => {
+  const selectMois = document.getElementById('selectAgentMois');
+  const reload = async () => {
     const agentId = select.value;
     if (!agentId) { document.getElementById('agentDetailContent').innerHTML = ''; return; }
-    await loadAgentDetail(agentId);
-  });
+    await loadAgentDetail(agentId, selectMois?.value || '');
+  };
+  select.addEventListener('change', reload);
+  selectMois?.addEventListener('change', reload);
 }
 
-async function loadAgentDetail(agentId) {
+async function loadAgentDetail(agentId, month = '') {
   const container = document.getElementById('agentDetailContent');
   container.innerHTML = '<div class="loading-state">Chargement…</div>';
 
+  const range = month ? monthToRange(month) : null;
   let volsList, ncList;
+  let totalVols = 0, totalC = 0, totalNC = 0;
 
   if (isDemoMode) {
-    volsList = demoGetVols(agentId).map(v => ({
-      ...v,
-      controles: demoGetControles(v.id)
-    }));
+    volsList = demoGetVols(agentId).map(v => ({ ...v, controles: demoGetControles(v.id) }));
+    if (range) volsList = volsList.filter(v => v.date_vol >= range.first && v.date_vol <= range.last);
     ncList = demoGetAllControles().filter(c => {
       const vol = demoGetVol(c.vol_id);
       return c.conformite === 'NC' && vol?.agent_id === agentId;
     }).map(c => ({ zone: c.zone, point_controle: c.point_controle }));
+    totalVols = volsList.length;
+    volsList.forEach(v => (v.controles || []).forEach(c => {
+      if (c.conformite === 'C') totalC++; else if (c.conformite === 'NC') totalNC++;
+    }));
   } else {
-    const r1 = await supabase.from('vols').select('*, controles(conformite)').eq('agent_id', agentId).order('date_vol', { ascending: false });
-    const r2 = await supabase.from('controles').select('zone, point_controle, vols!inner(agent_id)').eq('conformite', 'NC').eq('vols.agent_id', agentId);
-    volsList = r1.data || [];
-    ncList = r2.data || [];
-  }
+    // 1 — Stats globales via RPC (totalVols, totalC, totalNC en 1 requête)
+    const [{ data: statsData }, { data: volsData }] = await Promise.all([
+      supabase.rpc('agent_stats', {
+        p_agent_id: agentId,
+        p_from: range?.first || null,
+        p_to:   range?.last  || null
+      }),
+      (() => {
+        let q = supabase.from('vols')
+          .select('id, numero_vol, date_vol, type_vol, statut')
+          .eq('agent_id', agentId).order('date_vol', { ascending: false }).limit(1000);
+        if (range) q = q.gte('date_vol', range.first).lte('date_vol', range.last);
+        return q;
+      })()
+    ]);
 
-  const totalVols = volsList.length;
-  let totalC = 0, totalNC = 0;
-  volsList.forEach(v => {
-    (v.controles || []).forEach(c => {
-      if (c.conformite === 'C') totalC++;
-      else if (c.conformite === 'NC') totalNC++;
+    const stats = statsData?.[0] || { total_vols: 0, total_c: 0, total_nc: 0 };
+    totalVols = Number(stats.total_vols);
+    totalC    = Number(stats.total_c);
+    totalNC   = Number(stats.total_nc);
+    volsList  = volsData || [];
+
+    // 2 — Contrôles des vols affichés (pour colonnes C/NC du tableau + top NC)
+    const displayIds = volsList.map(v => v.id);
+    const displayControles = displayIds.length > 0
+      ? await fetchControlesForVols(displayIds, 'conformite, zone, point_controle, vol_id')
+      : [];
+
+    const byVol = {};
+    displayControles.forEach(c => {
+      if (!byVol[c.vol_id]) byVol[c.vol_id] = { C: 0, NC: 0 };
+      if (c.conformite === 'C')       byVol[c.vol_id].C++;
+      else if (c.conformite === 'NC') byVol[c.vol_id].NC++;
     });
-  });
+    volsList.forEach(v => { v._C = (byVol[v.id] || {}).C || 0; v._NC = (byVol[v.id] || {}).NC || 0; });
+
+    ncList = displayControles
+      .filter(c => c.conformite === 'NC')
+      .map(c => ({ zone: c.zone, point_controle: c.point_controle }));
+  }
   const taux = (totalC + totalNC) > 0 ? ((totalC / (totalC + totalNC)) * 100).toFixed(1) : '—';
 
   const ncCount = {};
@@ -778,8 +996,8 @@ async function loadAgentDetail(agentId) {
   const topNc = Object.entries(ncCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   const volRows = volsList.map(v => {
-    const C = (v.controles || []).filter(c => c.conformite === 'C').length;
-    const NC = (v.controles || []).filter(c => c.conformite === 'NC').length;
+    const C  = v._C  ?? (v.controles || []).filter(c => c.conformite === 'C').length;
+    const NC = v._NC ?? (v.controles || []).filter(c => c.conformite === 'NC').length;
     return `<tr>
       <td>${v.numero_vol}</td>
       <td>${formatDate(v.date_vol)}</td>
@@ -849,9 +1067,10 @@ async function loadNC(filters = {}) {
         .eq('conformite', 'NC')
         .order('created_at', { ascending: false });
 
-      if (filters.zone) query = query.eq('zone', filters.zone);
-      if (filters.agent) query = query.eq('vols.agent_id', filters.agent);
-      if (filters.date) query = query.eq('vols.date_vol', filters.date);
+      if (filters.zone)   query = query.eq('zone', filters.zone);
+      if (filters.agent)  query = query.eq('vols.agent_id', filters.agent);
+      if (filters.dateDe) query = query.gte('vols.date_vol', filters.dateDe);
+      if (filters.dateA)  query = query.lte('vols.date_vol', filters.dateA);
 
       const { data: d, error } = await query;
       if (error) throw error;
@@ -898,10 +1117,13 @@ async function loadNC(filters = {}) {
 }
 
 document.getElementById('btnFiltrerNC')?.addEventListener('click', () => {
+  const mois = document.getElementById('filterNcMois')?.value || '';
+  const range = mois ? monthToRange(mois) : null;
   loadNC({
     zone: document.getElementById('filterNcZone').value,
     agent: document.getElementById('filterNcAgent').value,
-    date: document.getElementById('filterNcDate').value
+    dateDe: range ? range.first : '',
+    dateA:  range ? range.last  : ''
   });
 });
 
@@ -920,7 +1142,7 @@ async function loadAgentsTable() {
   } else {
     const { data: d } = await supabase
       .from('profiles')
-      .select('*, vols(id)')
+      .select('*, vols(count)')
       .neq('role', 'admin')
       .order('nom');
     data = d || [];
@@ -934,7 +1156,7 @@ async function loadAgentsTable() {
       <td><strong>${a.nom}</strong></td>
       <td><code>${a.matricule || '—'}</code></td>
       <td><span class="statut-badge ${ROLE_COLORS[a.role] || ''}">${ROLE_LABELS[a.role] || a.role}</span></td>
-      <td>${(a.vols || []).length}</td>
+      <td>${Array.isArray(a.vols) && a.vols[0]?.count !== undefined ? a.vols[0].count : (a.vols || []).length}</td>
       <td>${a.actif ? '<span class="statut-badge statut-valide">Actif</span>' : '<span class="statut-badge statut-rejete">Inactif</span>'}</td>
       <td style="display:flex;gap:6px;">
         ${a.actif
@@ -1240,41 +1462,86 @@ async function loadAnalyseType(type) {
   const lastUpdatedEl = document.getElementById(isMP ? 'mpLastUpdated' : 'gpLastUpdated');
   if (refreshIcon) refreshIcon.classList.add('spin');
 
+  // Lire le filtre De/À
+  const fromSel  = document.getElementById(isMP ? 'mpFilterFrom' : 'gpFilterFrom');
+  const toSel    = document.getElementById(isMP ? 'mpFilterTo'   : 'gpFilterTo');
+  const fromDate = fromSel?.value ? monthToRange(fromSel.value).first : '2026-02-01';
+  const now      = new Date();
+  const toDate   = toSel?.value   ? monthToRange(toSel.value).last
+    : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}-${new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()}`;
+
   try {
     let vols = [], controles = [];
-
     let profiles = [];
 
+    // Charger les compagnies actives et peupler le filtre
+    let allCies = [];
     if (isDemoMode) {
-      vols = demoGetVols().filter(v => typeVolValues.includes(v.type_vol));
+      allCies = [{ code: 'AT', nom: 'Royal Air Maroc' }, { code: 'AF', nom: 'Air France' }];
+    } else {
+      const { data: cieData } = await supabase.from('compagnies').select('code, nom').eq('actif', true).order('code');
+      allCies = cieData || [];
+    }
+    const cieSel = document.getElementById(isMP ? 'mpFilterCie' : 'gpFilterCie');
+    if (cieSel) {
+      const prev = cieSel.value;
+      cieSel.innerHTML = '<option value="">Toutes</option>' +
+        allCies.map(c => `<option value="${c.code}">${c.code} – ${c.nom}</option>`).join('');
+      if (allCies.find(c => c.code === prev)) cieSel.value = prev;
+    }
+    const cieFilter = cieSel?.value || '';
+    const validCieCodes = new Set(allCies.map(c => c.code));
+
+    if (isDemoMode) {
+      vols = demoGetVols().filter(v =>
+        typeVolValues.includes(v.type_vol) &&
+        v.date_vol >= fromDate && v.date_vol <= toDate &&
+        (!cieFilter || v.numero_vol?.match(/^[A-Z]+/)?.[0] === cieFilter)
+      );
       const ids = new Set(vols.map(v => v.id));
       controles = demoGetAllControles().filter(c => ids.has(c.vol_id));
       profiles = demoGetAgents();
     } else {
-      const { data: v } = await supabase
-        .from('vols')
-        .select('id, numero_vol, immatriculation, agent_id, date_vol')
-        .in('type_vol', typeVolValues);
-      vols = v || [];
+      // Paginate vols to bypass Supabase's 1000-row default cap
+      const allVols = [];
+      let volOffset = 0;
+      const VOL_PAGE = 1000;
+      while (true) {
+        let q = supabase
+          .from('vols')
+          .select('id, numero_vol, immatriculation, agent_id, date_vol')
+          .in('type_vol', typeVolValues)
+          .gte('date_vol', fromDate)
+          .lte('date_vol', toDate)
+          .order('date_vol')
+          .range(volOffset, volOffset + VOL_PAGE - 1);
+        if (cieFilter) q = q.like('numero_vol', `${cieFilter}%`);
+        const { data: vPage, error: vErr } = await q;
+        if (vErr) throw vErr;
+        if (!vPage || vPage.length === 0) break;
+        allVols.push(...vPage);
+        if (vPage.length < VOL_PAGE) break;
+        volOffset += VOL_PAGE;
+      }
+      vols = allVols;
 
       if (vols.length) {
         const volIds = vols.map(v => v.id);
-        const [cRes, pRes] = await Promise.all([
-          supabase.from('controles')
-            .select('vol_id, zone, point_controle, conformite, observation')
-            .in('vol_id', volIds),
-          supabase.from('profiles')
-            .select('id, nom')
-            .in('id', [...new Set(vols.map(v => v.agent_id).filter(Boolean))])
+        const agentIds = [...new Set(vols.map(v => v.agent_id).filter(Boolean))];
+        const [cData, pRes] = await Promise.all([
+          fetchControlesForVols(volIds, 'vol_id, zone, point_controle, conformite, observation'),
+          supabase.from('profiles').select('id, nom').in('id', agentIds)
         ]);
-        controles = cRes.data || [];
+        controles = cData;
         profiles  = pRes.data || [];
       }
     }
 
     // ---- KPI calcul ----
     const inspections = controles.length;
-    const cieSet = new Set(vols.map(v => v.numero_vol ? v.numero_vol.match(/^[A-Z]+/)?.[0] : null).filter(Boolean));
+    // Compter uniquement les codes présents dans la table compagnies
+    const rawCieCodes = new Set(vols.map(v => v.numero_vol?.match(/^[A-Z]+/)?.[0]).filter(Boolean));
+    const cieSet = new Set([...rawCieCodes].filter(code => validCieCodes.has(code)));
     const agentSet  = new Set(vols.map(v => v.agent_id).filter(Boolean));
 
     const structs    = typeVolValues.flatMap(t => FICHE_STRUCTURES[t] || []);
@@ -2045,6 +2312,470 @@ function renderZoneConformite(type, controles) {
       </div>
     </div>
   `;
+}
+
+// ---- COMPAGNIES ----
+
+async function loadCompagniesView() {
+  renderCieList();
+  document.getElementById('formAddCie')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await addCompagnie();
+  });
+}
+
+async function renderCieList() {
+  const content = document.getElementById('cieListContent');
+  const countEl = document.getElementById('cieCount');
+  content.innerHTML = '<div class="loading-state">Chargement…</div>';
+
+  let rows = [];
+  if (isDemoMode) {
+    rows = [
+      { id: '1', code: 'AT', nom: 'Royal Air Maroc', actif: true },
+      { id: '2', code: 'AF', nom: 'Air France',      actif: true },
+    ];
+  } else {
+    const { data, error } = await supabase.from('compagnies').select('*').order('code');
+    if (error) { content.innerHTML = `<div class="empty-state">Erreur : ${error.message}</div>`; return; }
+    rows = data || [];
+  }
+
+  if (countEl) countEl.textContent = `${rows.length} compagnie${rows.length !== 1 ? 's' : ''}`;
+
+  if (!rows.length) {
+    content.innerHTML = '<div class="empty-state">Aucune compagnie enregistrée.</div>';
+    return;
+  }
+
+  content.innerHTML = `
+    <table class="data-table">
+      <thead><tr>
+        <th>Code</th><th>Nom complet</th><th style="text-align:center">Statut</th><th style="text-align:center">Actions</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>
+            <td><span class="cie-code-badge">${r.code}</span></td>
+            <td>${r.nom}</td>
+            <td style="text-align:center">
+              <span class="badge ${r.actif ? 'badge-ok' : 'badge-off'}">${r.actif ? 'Actif' : 'Inactif'}</span>
+            </td>
+            <td style="text-align:center">
+              <button class="btn btn-outline btn-xs" onclick="toggleCie('${r.id}', ${r.actif})">
+                <i class="fas fa-${r.actif ? 'ban' : 'check'}"></i> ${r.actif ? 'Désactiver' : 'Activer'}
+              </button>
+              <button class="btn btn-danger btn-xs" style="margin-left:.4rem" onclick="deleteCie('${r.id}', '${r.code}')">
+                <i class="fas fa-trash"></i>
+              </button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function addCompagnie() {
+  const code = document.getElementById('cieCode').value.trim().toUpperCase();
+  const nom  = document.getElementById('cieNom').value.trim();
+  const btn  = document.getElementById('btnAddCie');
+  if (!code || !nom) return;
+
+  btn.disabled = true;
+  if (!isDemoMode) {
+    const { error } = await supabase.from('compagnies').insert({ code, nom, actif: true });
+    if (error) {
+      showToast(error.message.includes('unique') ? `Le code "${code}" existe déjà.` : error.message, 'error');
+      btn.disabled = false; return;
+    }
+  }
+  document.getElementById('cieCode').value = '';
+  document.getElementById('cieNom').value  = '';
+  btn.disabled = false;
+  showToast(`Compagnie "${code}" ajoutée.`, 'success');
+  renderCieList();
+}
+
+async function toggleCie(id, currentActif) {
+  if (!isDemoMode) {
+    const { error } = await supabase.from('compagnies').update({ actif: !currentActif }).eq('id', id);
+    if (error) { showToast(error.message, 'error'); return; }
+  }
+  renderCieList();
+}
+
+async function deleteCie(id, code) {
+  if (!confirm(`Supprimer la compagnie "${code}" ?`)) return;
+  if (!isDemoMode) {
+    const { error } = await supabase.from('compagnies').delete().eq('id', id);
+    if (error) { showToast(error.message, 'error'); return; }
+  }
+  showToast(`Compagnie "${code}" supprimée.`, 'success');
+  renderCieList();
+}
+
+// ---- SUPPRESSION VOL (admin/chef) ----
+
+let adminDeleteVolId = null;
+
+window.adminConfirmDeleteVol = function(volId, numeroVol) {
+  if (!['admin','chef'].includes(currentUser?.role)) return;
+  adminDeleteVolId = volId;
+  document.getElementById('adminDeleteVolNumero').textContent = numeroVol;
+  document.getElementById('modalAdminDeleteVol').style.display = 'flex';
+};
+
+document.getElementById('btnAnnulerAdminDeleteVol')?.addEventListener('click', () => {
+  document.getElementById('modalAdminDeleteVol').style.display = 'none';
+  adminDeleteVolId = null;
+});
+
+document.getElementById('btnConfirmerAdminDeleteVol')?.addEventListener('click', async () => {
+  if (!adminDeleteVolId) return;
+  const btn = document.getElementById('btnConfirmerAdminDeleteVol');
+  btn.disabled = true;
+  btn.textContent = 'Suppression…';
+
+  try {
+    const { error } = await supabase
+      .from('vols')
+      .delete()
+      .eq('id', adminDeleteVolId);
+
+    if (error) throw error;
+
+    document.getElementById('modalAdminDeleteVol').style.display = 'none';
+    adminDeleteVolId = null;
+    showToast('Vol supprimé.', 'success');
+    loadVols();
+  } catch (err) {
+    showToast('Erreur lors de la suppression.', 'error');
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Supprimer définitivement';
+  }
+});
+
+// ---- SLA & NETTOYAGE ----
+
+const SLA_TYPES = [
+  { key: 'Moyen Porteur Transit',  label: 'Moyen Porteur Transit',  icon: 'fa-plane',       defaultSla: 45, defaultAgents: 3 },
+  { key: 'Moyen Porteur Stop Cmn', label: 'Moyen Porteur Stop Cmn', icon: 'fa-plane-circle-check', defaultSla: 60, defaultAgents: 4 },
+  { key: 'Gros Porteur Transit',   label: 'Gros Porteur Transit',   icon: 'fa-jet-fighter',  defaultSla: 60, defaultAgents: 5 },
+  { key: 'Gros Porteur Stop Cmn',  label: 'Gros Porteur Stop Cmn',  icon: 'fa-jet-fighter-up', defaultSla: 90, defaultAgents: 7 },
+];
+
+let slaConfigCache = {};
+
+async function loadSlaView() {
+  // Populate month select
+  const sel = document.getElementById('slaStatsMois');
+  if (sel && sel.options.length <= 1) {
+    getMonthsList().forEach(({ value, label }) => {
+      const o = document.createElement('option'); o.value = value; o.textContent = label; sel.appendChild(o);
+    });
+  }
+
+  // Load config from Supabase
+  const grid = document.getElementById('slaConfigGrid');
+  grid.innerHTML = '<div class="loading-state">Chargement…</div>';
+
+  let configRows = [];
+  if (!isDemoMode) {
+    const { data } = await supabase.from('sla_config').select('*');
+    configRows = data || [];
+  }
+
+  configRows.forEach(r => { slaConfigCache[r.type_vol] = r; });
+  renderSlaConfigGrid();
+
+  document.getElementById('btnSaveSla')?.addEventListener('click', saveSlaConfig);
+  document.getElementById('btnSlaStatsRefresh')?.addEventListener('click', loadSlaStats);
+}
+
+function renderSlaConfigGrid() {
+  const grid = document.getElementById('slaConfigGrid');
+  grid.innerHTML = SLA_TYPES.map(t => {
+    const cached = slaConfigCache[t.key] || {};
+    const sla    = cached.sla_minutes        ?? t.defaultSla;
+    const agents = cached.nb_agents_nettoyage ?? t.defaultAgents;
+    return `
+      <div class="sla-config-card">
+        <div class="sla-card-header">
+          <i class="fas ${t.icon} sla-card-icon"></i>
+          <span class="sla-card-title">${t.label}</span>
+        </div>
+        <div class="sla-card-body">
+          <div class="sla-field">
+            <label><i class="fas fa-clock"></i> Durée max. nettoyage</label>
+            <div class="sla-input-row">
+              <input type="number" class="sla-input" id="sla_min_${t.key}" value="${sla}" min="1" max="999" />
+              <span class="sla-unit">min</span>
+            </div>
+          </div>
+          <div class="sla-field">
+            <label><i class="fas fa-users"></i> Agents nettoyage requis</label>
+            <div class="sla-input-row">
+              <input type="number" class="sla-input" id="sla_ag_${t.key}" value="${agents}" min="1" max="99" />
+              <span class="sla-unit">agents</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function saveSlaConfig() {
+  const btn    = document.getElementById('btnSaveSla');
+  const status = document.getElementById('slaSaveStatus');
+  btn.disabled = true;
+  status.textContent = '';
+
+  const rows = SLA_TYPES.map(t => ({
+    type_vol:             t.key,
+    sla_minutes:          parseInt(document.getElementById(`sla_min_${t.key}`)?.value) || t.defaultSla,
+    nb_agents_nettoyage:  parseInt(document.getElementById(`sla_ag_${t.key}`)?.value)  || t.defaultAgents,
+  }));
+
+  if (isDemoMode) {
+    rows.forEach(r => { slaConfigCache[r.type_vol] = r; });
+    status.innerHTML = '<span style="color:#22c55e"><i class="fas fa-check"></i> Enregistré (démo)</span>';
+    btn.disabled = false;
+    return;
+  }
+
+  const { error } = await supabase.from('sla_config').upsert(rows, { onConflict: 'type_vol' });
+  if (error) {
+    status.innerHTML = `<span style="color:#ef4444"><i class="fas fa-xmark"></i> Erreur : ${error.message}</span>`;
+  } else {
+    rows.forEach(r => { slaConfigCache[r.type_vol] = r; });
+    status.innerHTML = '<span style="color:#22c55e"><i class="fas fa-check"></i> Configuration enregistrée</span>';
+    setTimeout(() => { status.textContent = ''; }, 3000);
+  }
+  btn.disabled = false;
+}
+
+async function loadSlaStats() {
+  const content = document.getElementById('slaStatsContent');
+  content.innerHTML = '<div class="loading-state">Chargement…</div>';
+
+  const mois = document.getElementById('slaStatsMois')?.value || '';
+  const range = mois ? monthToRange(mois) : null;
+
+  let vols = [];
+  if (isDemoMode) {
+    vols = demoGetVols();
+    if (range) vols = vols.filter(v => v.date_vol >= range.first && v.date_vol <= range.last);
+  } else {
+    let q = supabase
+      .from('vols')
+      .select('id, numero_vol, immatriculation, type_vol, date_vol, heure_debut, heure_fin, profiles(nom)')
+      .order('date_vol');
+    if (range) q = q.gte('date_vol', range.first).lte('date_vol', range.last);
+    const all = [];
+    let off = 0;
+    while (true) {
+      const { data: pg, error } = await q.range(off, off + 999);
+      if (error) { content.innerHTML = `<div class="empty-state">Erreur : ${error.message}</div>`; return; }
+      if (!pg || pg.length === 0) break;
+      all.push(...pg); if (pg.length < 1000) break; off += 1000;
+    }
+    vols = all;
+  }
+
+  // Calcul conformité par type + collecte des vols hors SLA
+  const stats = {};
+  SLA_TYPES.forEach(t => {
+    const cfg = slaConfigCache[t.key] || {};
+    stats[t.key] = {
+      key:     t.key,
+      label:   t.label,
+      icon:    t.icon,
+      sla:     cfg.sla_minutes        ?? t.defaultSla,
+      agents:  cfg.nb_agents_nettoyage ?? t.defaultAgents,
+      total: 0, avecDuree: 0, dansSla: 0, horsSla: 0,
+      volsHorsSla: [],
+    };
+  });
+
+  vols.forEach(v => {
+    const s = stats[v.type_vol];
+    if (!s) return;
+    s.total++;
+    if (!v.heure_debut || !v.heure_fin) return;
+    const [hd, md] = v.heure_debut.split(':').map(Number);
+    const [hf, mf] = v.heure_fin.split(':').map(Number);
+    let duree = (hf * 60 + mf) - (hd * 60 + md);
+    if (duree < 0) duree += 1440;
+    s.avecDuree++;
+    if (duree <= s.sla) {
+      s.dansSla++;
+    } else {
+      s.horsSla++;
+      s.volsHorsSla.push({ ...v, duree });
+    }
+  });
+
+  const periodeLabel = range
+    ? `${MONTH_NAMES_FULL[parseInt(mois.split('-')[1]) - 1]} ${mois.split('-')[0]}`
+    : 'toute la période';
+
+  const totalHorsSla = Object.values(stats).reduce((acc, s) => acc + s.horsSla, 0);
+
+  // KPI cards
+  const kpiHtml = Object.values(stats).map(s => {
+    const taux = s.avecDuree > 0 ? (s.dansSla / s.avecDuree * 100).toFixed(1) : null;
+    const color = taux === null ? '#94a3b8' : taux >= 90 ? '#22c55e' : taux >= 70 ? '#f59e0b' : '#ef4444';
+    return `
+      <div class="sla-kpi-card">
+        <div class="sla-kpi-label">${s.label}</div>
+        <div class="sla-kpi-value" style="color:${color}">${taux !== null ? taux + '%' : '—'}</div>
+        <div class="sla-kpi-sub">conformité SLA (≤ ${s.sla} min)</div>
+        <div class="sla-kpi-detail">${s.dansSla} / ${s.avecDuree} vols analysés</div>
+      </div>`;
+  }).join('');
+
+  // Table récap
+  const tableRows = Object.values(stats).map(s => {
+    const taux = s.avecDuree > 0 ? (s.dansSla / s.avecDuree * 100).toFixed(1) + '%' : '—';
+    const color = s.avecDuree === 0 ? '' : parseFloat(taux) >= 90 ? 'color:#22c55e' : parseFloat(taux) >= 70 ? 'color:#f59e0b' : 'color:#ef4444';
+    const sansInfo = s.total - s.avecDuree;
+    const btnHors = s.horsSla > 0
+      ? `<button class="btn btn-outline btn-xs sla-voir-hors" data-type="${s.key}">
+           <i class="fas fa-eye"></i> Voir (${s.horsSla})
+         </button>`
+      : `<span style="color:#94a3b8">—</span>`;
+    return `
+      <tr>
+        <td><i class="fas ${s.icon}"></i> ${s.label}</td>
+        <td style="text-align:center">${s.sla} min</td>
+        <td style="text-align:center">${s.agents}</td>
+        <td style="text-align:center">${s.total}</td>
+        <td style="text-align:center;color:#22c55e">${s.dansSla}</td>
+        <td style="text-align:center">${btnHors}</td>
+        <td style="text-align:center;color:#94a3b8">${sansInfo}</td>
+        <td style="text-align:center;font-weight:600;${color}">${taux}</td>
+      </tr>`;
+  }).join('');
+
+  // Table vols hors SLA (tous types confondus, masquée par défaut)
+  const allHorsRows = Object.values(stats)
+    .flatMap(s => s.volsHorsSla.map(v => ({ ...v, sla: s.sla, typeLabel: s.label })))
+    .sort((a, b) => a.date_vol.localeCompare(b.date_vol));
+
+  const horsTableRows = allHorsRows.map(v => {
+    const ecart = v.duree - v.sla;
+    return `
+      <tr>
+        <td>${formatDate(v.date_vol)}</td>
+        <td><strong>${v.numero_vol || '—'}</strong></td>
+        <td>${v.immatriculation || '—'}</td>
+        <td>${v.typeLabel}</td>
+        <td>${v.profiles?.nom || '—'}</td>
+        <td style="text-align:center">${v.heure_debut?.slice(0,5)} → ${v.heure_fin?.slice(0,5)}</td>
+        <td style="text-align:center;font-weight:600;color:#ef4444">${v.duree} min</td>
+        <td style="text-align:center">${v.sla} min</td>
+        <td style="text-align:center;color:#ef4444;font-weight:600">+${ecart} min</td>
+      </tr>`;
+  }).join('');
+
+  content.innerHTML = `
+    <div class="sla-kpi-grid">${kpiHtml}</div>
+
+    <div class="card" style="margin-top:1.5rem;">
+      <div class="card-header">
+        <h3>Récapitulatif — ${periodeLabel}</h3>
+        ${totalHorsSla > 0 ? `
+        <button class="btn btn-danger btn-sm" id="btnToggleHorsSla">
+          <i class="fas fa-triangle-exclamation"></i> Vols hors SLA (${totalHorsSla})
+        </button>` : ''}
+      </div>
+      <div class="card-body" style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr>
+            <th>Type de vol</th>
+            <th style="text-align:center">SLA</th>
+            <th style="text-align:center">Agents requis</th>
+            <th style="text-align:center">Total vols</th>
+            <th style="text-align:center">Dans SLA</th>
+            <th style="text-align:center">Hors SLA</th>
+            <th style="text-align:center">Sans horaire</th>
+            <th style="text-align:center">Conformité</th>
+          </tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="slaHorsList" style="display:none;margin-top:1rem;">
+      <div class="card sla-hors-card">
+        <div class="card-header" style="background:rgba(239,68,68,.08);border-bottom:1px solid rgba(239,68,68,.2);">
+          <h3 style="color:#ef4444"><i class="fas fa-triangle-exclamation"></i> Liste des vols hors SLA — ${periodeLabel}</h3>
+          <button class="btn btn-outline btn-sm" id="btnFermerHorsSla"><i class="fas fa-xmark"></i> Fermer</button>
+        </div>
+        <div class="card-body" style="overflow-x:auto;">
+          ${allHorsRows.length === 0 ? '<div class="empty-state">Aucun vol hors SLA</div>' : `
+          <table class="data-table">
+            <thead><tr>
+              <th>Date</th><th>N° vol</th><th>Immat.</th><th>Type</th><th>Agent contrôle</th>
+              <th style="text-align:center">Horaires</th>
+              <th style="text-align:center">Durée réelle</th>
+              <th style="text-align:center">SLA</th>
+              <th style="text-align:center">Dépassement</th>
+            </tr></thead>
+            <tbody>${horsTableRows}</tbody>
+          </table>`}
+        </div>
+      </div>
+    </div>
+
+    <p class="sla-note"><i class="fas fa-circle-info"></i> <em>Sans horaire</em> = vols sans heure de début ou de fin enregistrée par l'agent de contrôle.</p>`;
+
+  // Bouton global toggle
+  document.getElementById('btnToggleHorsSla')?.addEventListener('click', () => {
+    const panel = document.getElementById('slaHorsList');
+    const visible = panel.style.display !== 'none';
+    panel.style.display = visible ? 'none' : 'block';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  document.getElementById('btnFermerHorsSla')?.addEventListener('click', () => {
+    document.getElementById('slaHorsList').style.display = 'none';
+  });
+
+  // Boutons "Voir (N)" par type → filtre la liste sur ce type
+  document.querySelectorAll('.sla-voir-hors').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const typeKey = btn.dataset.type;
+      const s = stats[typeKey];
+      if (!s) return;
+
+      const filteredRows = s.volsHorsSla
+        .sort((a, b) => a.date_vol.localeCompare(b.date_vol))
+        .map(v => {
+          const ecart = v.duree - s.sla;
+          return `
+            <tr>
+              <td>${formatDate(v.date_vol)}</td>
+              <td><strong>${v.numero_vol || '—'}</strong></td>
+              <td>${v.immatriculation || '—'}</td>
+              <td>${s.label}</td>
+              <td>${v.profiles?.nom || '—'}</td>
+              <td style="text-align:center">${v.heure_debut?.slice(0,5)} → ${v.heure_fin?.slice(0,5)}</td>
+              <td style="text-align:center;font-weight:600;color:#ef4444">${v.duree} min</td>
+              <td style="text-align:center">${s.sla} min</td>
+              <td style="text-align:center;color:#ef4444;font-weight:600">+${ecart} min</td>
+            </tr>`;
+        }).join('');
+
+      const panel = document.getElementById('slaHorsList');
+      panel.querySelector('tbody').innerHTML = filteredRows;
+      panel.querySelector('h3').innerHTML =
+        `<i class="fas fa-triangle-exclamation"></i> Vols hors SLA — ${s.label} — ${periodeLabel}`;
+      panel.style.display = 'block';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
 }
 
 // ---- DÉMARRAGE ----

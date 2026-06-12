@@ -356,6 +356,8 @@ async function init() {
   document.getElementById('dateVol').valueAsDate = new Date();
 
   setupNavigation();
+  setupMesControlesTabs();
+  await loadCompagniesSelect();
   setupFormEntete();
   setupOfflineDetection();
   loadMesControles();
@@ -388,7 +390,44 @@ function showView(viewName) {
     document.getElementById('viewNouveau').style.display = 'block';
   } else if (viewName === 'mes-controles') {
     document.getElementById('viewMesControles').style.display = 'block';
+    mcCurrentPage = 0;
+    mcCurrentPeriod = 'today';
+    document.querySelectorAll('.mc-tab').forEach(t => t.classList.toggle('active', t.dataset.period === 'today'));
     loadMesControles();
+  }
+}
+
+// ---- COMPAGNIES ----
+
+async function loadCompagniesSelect() {
+  const sel = document.getElementById('codeCompagnie');
+  if (!sel) return;
+
+  let codes = [];
+  if (isDemoMode) {
+    codes = [{ code: 'AT', nom: 'Royal Air Maroc' }, { code: 'AF', nom: 'Air France' }];
+  } else {
+    const { data } = await supabase
+      .from('compagnies')
+      .select('code, nom')
+      .eq('actif', true)
+      .order('code');
+    codes = data || [];
+  }
+
+  sel.innerHTML = '<option value="">— Sélectionner —</option>';
+  codes.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.code;
+    o.textContent = `${c.code} — ${c.nom}`;
+    sel.appendChild(o);
+  });
+
+  if (codes.length === 0) {
+    const o = document.createElement('option');
+    o.value = ''; o.disabled = true;
+    o.textContent = 'Aucune compagnie configurée';
+    sel.appendChild(o);
   }
 }
 
@@ -404,30 +443,65 @@ function setupFormEntete() {
     });
   });
 
-  // Formatage code compagnie : 2 lettres max, uppercase
-  document.getElementById('codeCompagnie').addEventListener('input', function () {
-    this.value = this.value.toUpperCase().replace(/[^A-Z]/g, '').substring(0, 2);
-  });
-
   // Numéro de vol : chiffres seulement, max 4
   document.getElementById('numeroVol').addEventListener('input', function () {
     this.value = this.value.replace(/[^0-9]/g, '').substring(0, 4);
   });
 
-  // Heure fin toujours > heure début
+  // Pas de contrainte min sur heureFin — les vols minuit (ex: 23:50→00:10) sont valides
   document.getElementById('heureDebut').addEventListener('change', function () {
     const fin = document.getElementById('heureFin');
-    fin.min = this.value;
-    if (fin.value && fin.value <= this.value) fin.value = '';
+    fin.min = '';
+    // Effacer heureFin uniquement si elle est identique à heureDebut (durée nulle)
+    if (fin.value && fin.value === this.value) fin.value = '';
   });
 
-  // Formatage immatriculation : XX-XXX automatique
-  document.getElementById('immatriculation').addEventListener('input', function () {
-    const letters = this.value.toUpperCase().replace(/[^A-Z]/g, '');
-    if (letters.length <= 2) {
-      this.value = letters;
+  // Immatriculation : préfixe CN- verrouillé quand code cie = AT
+  const codeCompagnieEl = document.getElementById('codeCompagnie');
+  const immatEl = document.getElementById('immatriculation');
+
+  function isAT() {
+    return codeCompagnieEl.value.trim().toUpperCase() === 'AT';
+  }
+
+  codeCompagnieEl.addEventListener('change', function () {
+    if (isAT()) {
+      immatEl.value = 'CN-';
+      immatEl.placeholder = 'CN-XXX';
+      immatEl.focus();
+      immatEl.setSelectionRange(3, 3);
     } else {
-      this.value = letters.substring(0, 2) + '-' + letters.substring(2, 5);
+      if (immatEl.value === 'CN-') immatEl.value = '';
+      immatEl.placeholder = 'ex: CN-RGT';
+    }
+  });
+
+  // Bloquer suppression du préfixe CN-
+  immatEl.addEventListener('keydown', function (e) {
+    if (!isAT()) return;
+    const sel = this.selectionStart;
+    if (e.key === 'Backspace' && sel <= 3) e.preventDefault();
+    if (e.key === 'Delete' && sel < 3) e.preventDefault();
+  });
+
+  immatEl.addEventListener('input', function () {
+    if (isAT()) {
+      let raw = this.value.toUpperCase();
+      if (!raw.startsWith('CN-')) {
+        const suffix = raw.replace(/^C?N?-?/, '').replace(/[^A-Z]/g, '').substring(0, 3);
+        raw = 'CN-' + suffix;
+      } else {
+        const suffix = raw.substring(3).replace(/[^A-Z]/g, '').substring(0, 3);
+        raw = 'CN-' + suffix;
+      }
+      this.value = raw;
+    } else {
+      const letters = this.value.toUpperCase().replace(/[^A-Z]/g, '');
+      if (letters.length <= 2) {
+        this.value = letters;
+      } else {
+        this.value = letters.substring(0, 2) + '-' + letters.substring(2, 5);
+      }
     }
   });
 
@@ -437,7 +511,8 @@ function setupFormEntete() {
     const codeCompagnie = document.getElementById('codeCompagnie').value.trim().toUpperCase();
     const numeroVolRaw = document.getElementById('numeroVol').value.trim().toUpperCase();
     const numeroVol = codeCompagnie + numeroVolRaw;
-    const immatriculation = document.getElementById('immatriculation').value.trim();
+    const immatRaw = document.getElementById('immatriculation').value.trim();
+    const immatriculation = immatRaw === 'CN-' ? '' : immatRaw;
     const typeVol = document.getElementById('typeVol').value;
     const heureDebut = document.getElementById('heureDebut').value || null;
     const heureFin = document.getElementById('heureFin').value || null;
@@ -450,8 +525,10 @@ function setupFormEntete() {
       showToast('Veuillez remplir les champs obligatoires (date, code cie, numéro de vol).', 'error');
       return;
     }
-    if (heureDebut && heureFin && heureFin <= heureDebut) {
-      showToast('L\'heure de fin doit être supérieure à l\'heure de début.', 'error');
+    // Refuser uniquement si heureDebut === heureFin (durée nulle)
+    // Les passages minuit (ex: 23:50 → 00:10) sont valides
+    if (heureDebut && heureFin && heureFin === heureDebut) {
+      showToast('L\'heure de fin ne peut pas être identique à l\'heure de début.', 'error');
       return;
     }
 
@@ -729,9 +806,17 @@ function onConformiteChange(e) {
     obsEl.dataset.bound = '1';
     obsEl.addEventListener('input', () => {
       controles[key].observation = obsEl.value;
+      if (obsEl.value.trim()) clearNcMissingHint(sIdx, pIdx);
       scheduleAutosave(sIdx, pIdx, key);
     });
   }
+}
+
+function clearNcMissingHint(sIdx, pIdx) {
+  const pointEl = document.getElementById(`point_${sIdx}_${pIdx}`);
+  if (!pointEl) return;
+  pointEl.classList.remove('nc-missing-justif');
+  pointEl.querySelector('.nc-required-hint')?.remove();
 }
 
 // ---- AUTOSAVE ----
@@ -913,6 +998,8 @@ async function handlePhotoUpload(event, sIdx, pIdx, key) {
 
       if (isDemoMode) {
         const localUrl = URL.createObjectURL(compressed);
+        controles[key].photoCount = (controles[key].photoCount || 0) + 1;
+        clearNcMissingHint(sIdx, pIdx);
         const img = document.createElement('img');
         img.src = localUrl;
         img.className = 'photo-thumb';
@@ -943,6 +1030,8 @@ async function handlePhotoUpload(event, sIdx, pIdx, key) {
         url_publique: publicUrl
       });
 
+      controles[key].photoCount = (controles[key].photoCount || 0) + 1;
+      clearNcMissingHint(sIdx, pIdx);
       const img = document.createElement('img');
       img.src = publicUrl;
       img.className = 'photo-thumb';
@@ -1120,10 +1209,84 @@ document.getElementById('btnSuccesPDF')?.addEventListener('click', () => {});  /
 
 // ---- MES CONTRÔLES ----
 
+const MC_PAGE_SIZE = 20;
+let mcCurrentPeriod = 'today';
+let mcCurrentPage = 0;
+let mcTotalCount = 0;
+
+function setupMesControlesTabs() {
+  document.querySelectorAll('.mc-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.mc-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      mcCurrentPeriod = tab.dataset.period;
+      mcCurrentPage = 0;
+      loadMesControles();
+    });
+  });
+  document.getElementById('btnPrevPage')?.addEventListener('click', () => {
+    if (mcCurrentPage > 0) { mcCurrentPage--; loadMesControles(); }
+  });
+  document.getElementById('btnNextPage')?.addEventListener('click', () => {
+    if ((mcCurrentPage + 1) * MC_PAGE_SIZE < mcTotalCount) { mcCurrentPage++; loadMesControles(); }
+  });
+}
+
+function getPeriodFilter() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  if (mcCurrentPeriod === 'today') return { gte: today, lte: today };
+  // recent : 7 derniers jours
+  const d7 = new Date(now); d7.setDate(d7.getDate() - 6);
+  const from = `${d7.getFullYear()}-${pad(d7.getMonth() + 1)}-${pad(d7.getDate())}`;
+  return { gte: from, lte: today };
+}
+
+function buildVolCard(vol, ncCount) {
+  const canContinue = vol.statut === 'en_cours';
+  const taux = (() => {
+    const c = (vol.controles || []).filter(x => x.conformite === 'C').length;
+    const total = c + ncCount;
+    return total > 0 ? Math.round((c / total) * 100) : null;
+  })();
+  const tauxHtml = taux !== null
+    ? `<span class="mc-card-taux ${taux >= 80 ? 'taux-ok' : taux >= 50 ? 'taux-mid' : 'taux-low'}">${taux}%</span>`
+    : '';
+
+  return `
+    <div class="mc-card ${canContinue ? 'mc-card-active' : ''}">
+      <div class="mc-card-top">
+        <div class="mc-card-vol">
+          <span class="mc-card-num">${vol.numero_vol}</span>
+          <span class="mc-card-type">${vol.type_vol}</span>
+        </div>
+        <div class="mc-card-right">
+          ${getStatutBadge(vol.statut)}
+          ${tauxHtml}
+        </div>
+      </div>
+      <div class="mc-card-meta">
+        <span>📅 ${formatDate(vol.date_vol)}</span>
+        ${vol.heure_debut ? `<span>🕐 ${vol.heure_debut}${vol.heure_fin ? ' → ' + vol.heure_fin : ''}</span>` : ''}
+        ${ncCount > 0 ? `<span class="mc-card-nc">❌ ${ncCount} NC</span>` : '<span class="mc-card-nc-ok">✅ 0 NC</span>'}
+      </div>
+      <div class="mc-card-actions">
+        <button class="btn btn-outline btn-sm" onclick="viewFiche('${vol.id}')">👁 Voir</button>
+        ${canContinue ? `<button class="btn btn-primary btn-sm" onclick="continueFiche('${vol.id}')">▶ Continuer</button>` : ''}
+        ${!canContinue ? `<button class="btn btn-outline btn-sm" onclick="downloadFichePDF('${vol.id}','${vol.type_vol}')">⬇ PDF</button>` : ''}
+        ${canContinue ? `<button class="btn btn-danger btn-sm" onclick="confirmDeleteVol('${vol.id}','${vol.numero_vol}')">🗑 Supprimer</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 async function loadMesControles() {
-  const container = document.getElementById('mesControlesTable');
+  const container = document.getElementById('mesControlesList');
+  const pagination = document.getElementById('mesControlesPagination');
   if (!container) return;
   container.innerHTML = '<div class="loading-state">Chargement…</div>';
+  if (pagination) pagination.style.display = 'none';
 
   if (isDemoMode) {
     const vols = demoGetVols('demo');
@@ -1131,86 +1294,115 @@ async function loadMesControles() {
       container.innerHTML = '<div class="empty-state">Aucun contrôle pour l\'instant.</div>';
       return;
     }
-    const rows = vols.map(vol => {
-      const cList = demoGetControles(vol.id);
-      const nc = cList.filter(c => c.conformite === 'NC').length;
-      const canContinue = vol.statut === 'en_cours';
-      return `
-        <tr>
-          <td><strong>${vol.numero_vol}</strong></td>
-          <td>${formatDate(vol.date_vol)}</td>
-          <td>${vol.type_vol}</td>
-          <td><span class="badge-nc-count">${nc}</span></td>
-          <td>${getStatutBadge(vol.statut)}</td>
-          <td>
-            <button class="btn btn-outline btn-xs" onclick="viewFiche('${vol.id}')">Voir</button>
-            ${canContinue ? `<button class="btn btn-primary btn-xs" onclick="continueFiche('${vol.id}')">Continuer</button>` : ''}
-            ${!canContinue ? `<button class="btn btn-outline btn-xs btn-pdf-dl" onclick="downloadFichePDF('${vol.id}','${vol.type_vol}')">⬇ PDF</button>` : ''}
-          </td>
-        </tr>
-      `;
+    const cards = vols.map(vol => {
+      const nc = demoGetControles(vol.id).filter(c => c.conformite === 'NC').length;
+      return buildVolCard(vol, nc);
     }).join('');
-    container.innerHTML = `
-      <table class="data-table">
-        <thead>
-          <tr><th>N° vol</th><th>Date</th><th>Type avion</th><th>Nb NC</th><th>Statut</th><th>Actions</th></tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    `;
+    container.innerHTML = `<div class="mc-cards-grid">${cards}</div>`;
     return;
   }
 
   try {
-    const { data: vols, error } = await supabase
+    const filter = getPeriodFilter();
+    let query = supabase
       .from('vols')
-      .select('*, controles(conformite)')
+      .select('id, numero_vol, date_vol, type_vol, heure_debut, heure_fin, statut, controles(conformite)', { count: 'exact' })
       .eq('agent_id', currentUser.id)
-      .order('created_at', { ascending: false });
+      .order('date_vol', { ascending: false })
+      .order('created_at', { ascending: false })
+      .range(mcCurrentPage * MC_PAGE_SIZE, (mcCurrentPage + 1) * MC_PAGE_SIZE - 1);
 
+    if (filter) {
+      query = query.gte('date_vol', filter.gte).lte('date_vol', filter.lte);
+    }
+
+    const { data: vols, error, count } = await query;
     if (error) throw error;
 
+    mcTotalCount = count || 0;
+
     if (!vols || vols.length === 0) {
-      container.innerHTML = '<div class="empty-state">Aucun contrôle pour l\'instant.</div>';
+      const msgs = {
+        today: 'Aucun contrôle aujourd\'hui.',
+        recent: 'Aucun contrôle sur les 7 derniers jours.'
+      };
+      container.innerHTML = `<div class="empty-state">${msgs[mcCurrentPeriod] || 'Aucun contrôle.'}</div>`;
       return;
     }
 
-    const rows = vols.map(vol => {
+    const cards = vols.map(vol => {
       const nc = (vol.controles || []).filter(c => c.conformite === 'NC').length;
-      const statutBadge = getStatutBadge(vol.statut);
-      const canContinue = vol.statut === 'en_cours';
-      return `
-        <tr>
-          <td><strong>${vol.numero_vol}</strong></td>
-          <td>${formatDate(vol.date_vol)}</td>
-          <td>${vol.type_vol}</td>
-          <td><span class="badge-nc-count">${nc}</span></td>
-          <td>${statutBadge}</td>
-          <td>
-            <button class="btn btn-outline btn-xs" onclick="viewFiche('${vol.id}')">Voir</button>
-            ${canContinue ? `<button class="btn btn-primary btn-xs" onclick="continueFiche('${vol.id}')">Continuer</button>` : ''}
-            ${!canContinue ? `<button class="btn btn-outline btn-xs btn-pdf-dl" onclick="downloadFichePDF('${vol.id}','${vol.type_vol}')">⬇ PDF</button>` : ''}
-          </td>
-        </tr>
-      `;
+      return buildVolCard(vol, nc);
     }).join('');
 
-    container.innerHTML = `
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>N° vol</th><th>Date</th><th>Type avion</th>
-            <th>Nb NC</th><th>Statut</th><th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    `;
+    container.innerHTML = `<div class="mc-cards-grid">${cards}</div>`;
+
+    // Pagination (uniquement pour "all" ou si résultats > page)
+    if (mcTotalCount > MC_PAGE_SIZE) {
+      const totalPages = Math.ceil(mcTotalCount / MC_PAGE_SIZE);
+      document.getElementById('paginationInfo').textContent =
+        `Page ${mcCurrentPage + 1} / ${totalPages} (${mcTotalCount} vols)`;
+      document.getElementById('btnPrevPage').disabled = mcCurrentPage === 0;
+      document.getElementById('btnNextPage').disabled = (mcCurrentPage + 1) >= totalPages;
+      pagination.style.display = 'flex';
+    }
   } catch (err) {
     container.innerHTML = '<div class="empty-state error">Erreur de chargement.</div>';
     console.error(err);
   }
 }
+
+// ---- SUPPRESSION VOL EN COURS ----
+
+let deleteVolId = null;
+
+window.confirmDeleteVol = function(volId, numeroVol) {
+  deleteVolId = volId;
+  document.getElementById('deleteVolNumero').textContent = numeroVol;
+  document.getElementById('modalDeleteVol').style.display = 'flex';
+};
+
+document.getElementById('btnAnnulerDeleteVol')?.addEventListener('click', () => {
+  document.getElementById('modalDeleteVol').style.display = 'none';
+  deleteVolId = null;
+});
+
+document.getElementById('btnConfirmerDeleteVol')?.addEventListener('click', async () => {
+  if (!deleteVolId) return;
+  const btn = document.getElementById('btnConfirmerDeleteVol');
+  btn.disabled = true;
+  btn.textContent = 'Suppression…';
+
+  try {
+    if (isDemoMode) {
+      showToast('Suppression non disponible en mode démo.', 'error');
+      return;
+    }
+
+    // Les controles, photos et materiels_utilises sont en cascade (ON DELETE CASCADE)
+    const { error } = await supabase
+      .from('vols')
+      .delete()
+      .eq('id', deleteVolId)
+      .eq('agent_id', currentUser.id)
+      .eq('statut', 'en_cours');
+
+    if (error) throw error;
+
+    localStorage.removeItem(`offline_${deleteVolId}`);
+    document.getElementById('modalDeleteVol').style.display = 'none';
+    deleteVolId = null;
+    showToast('Contrôle supprimé.', 'success');
+    updateBadgeEnCours();
+    loadMesControles();
+  } catch (err) {
+    showToast('Erreur lors de la suppression.', 'error');
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Supprimer définitivement';
+  }
+});
 
 // ---- VOIR FICHE ----
 
@@ -1382,6 +1574,36 @@ function checkAndUnlockNext(sIdx) {
   );
   if (!allDone) return;
 
+  // Chaque point NC doit avoir un commentaire OU au moins une photo
+  const ncSansJustif = section.points
+    .map((point, pIdx) => ({ point, pIdx, key: getKey(section.zone, section.sous_zone, point) }))
+    .filter(({ key }) => {
+      const c = controles[key];
+      return c?.conformite === 'NC' && !c.observation?.trim() && !(c.photoCount > 0);
+    });
+
+  if (ncSansJustif.length > 0) {
+    showToast(
+      `${ncSansJustif.length} point(s) NC nécessitent un commentaire ou une photo avant de continuer.`,
+      'error'
+    );
+    ncSansJustif.forEach(({ pIdx }) => {
+      const pointEl = document.getElementById(`point_${sIdx}_${pIdx}`);
+      if (!pointEl) return;
+      pointEl.classList.add('nc-missing-justif');
+      if (!pointEl.querySelector('.nc-required-hint')) {
+        const hint = document.createElement('div');
+        hint.className = 'nc-required-hint';
+        hint.innerHTML = '⚠ Ajoutez un commentaire ou une photo pour continuer.';
+        pointEl.querySelector('.nc-details')?.appendChild(hint);
+      }
+    });
+    // Scroll vers le premier NC sans justification
+    const firstEl = document.getElementById(`point_${sIdx}_${ncSansJustif[0].pIdx}`);
+    firstEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
   const cards = document.querySelectorAll('#ficheAccordion .accordion-card');
   const nextIdx = sIdx + 1;
 
@@ -1451,11 +1673,29 @@ async function loadExistingControles() {
     return;
   }
 
-  const { data } = await supabase.from('controles').select('*').eq('vol_id', currentVolId);
+  const [{ data }, { data: photosData }] = await Promise.all([
+    supabase.from('controles').select('*').eq('vol_id', currentVolId),
+    supabase.from('photos').select('controle_id').eq('vol_id', currentVolId)
+  ]);
   if (!data) return;
+
+  // Compter les photos par controle_id
+  const photoCountMap = {};
+  (photosData || []).forEach(p => {
+    if (p.controle_id) photoCountMap[p.controle_id] = (photoCountMap[p.controle_id] || 0) + 1;
+  });
+
   data.forEach(c => {
     const key = getKey(c.zone, c.sous_zone, c.point_controle);
-    controles[key] = { conformite: c.conformite, observation: c.observation, controle_id: c.id, zone: c.zone, sous_zone: c.sous_zone, point: c.point_controle };
+    controles[key] = {
+      conformite: c.conformite,
+      observation: c.observation,
+      controle_id: c.id,
+      zone: c.zone,
+      sous_zone: c.sous_zone,
+      point: c.point_controle,
+      photoCount: photoCountMap[c.id] || 0
+    };
   });
   restoreConformites();
 }

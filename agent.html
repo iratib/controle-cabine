@@ -126,7 +126,9 @@
                 </div>
                 <div class="form-group">
                   <label for="codeCompagnie">Code cie *</label>
-                  <input type="text" id="codeCompagnie" placeholder="ex: AT" maxlength="2" style="text-transform:uppercase" required />
+                  <select id="codeCompagnie" required>
+                    <option value="">— Sélectionner —</option>
+                  </select>
                 </div>
                 <div class="form-group">
                   <label for="numeroVol">Numéro de vol *</label>
@@ -261,19 +263,41 @@
 
       <!-- ======== VUE : MES CONTRÔLES ======== -->
       <div id="viewMesControles" class="view" style="display:none;">
-        <div class="card">
-          <div class="card-header">
-            <h2>📋 Mes contrôles</h2>
+        <div class="mc-header">
+          <h2>📋 Mes contrôles</h2>
+          <div class="mc-tabs">
+            <button class="mc-tab active" data-period="today">Aujourd'hui</button>
+            <button class="mc-tab" data-period="recent">7 derniers jours</button>
           </div>
-          <div class="card-body">
-            <div id="mesControlesTable" class="table-responsive">
-              <div class="loading-state">Chargement…</div>
-            </div>
-          </div>
+        </div>
+        <div id="mesControlesList">
+          <div class="loading-state">Chargement…</div>
+        </div>
+        <div id="mesControlesPagination" style="display:none;" class="mc-pagination">
+          <button class="btn btn-outline btn-sm" id="btnPrevPage">← Précédent</button>
+          <span id="paginationInfo" class="mc-page-info"></span>
+          <button class="btn btn-outline btn-sm" id="btnNextPage">Suivant →</button>
         </div>
       </div>
 
     </main>
+  </div>
+
+  <!-- MODAL SUPPRESSION VOL -->
+  <div id="modalDeleteVol" class="modal-overlay" style="display:none;">
+    <div class="modal modal-confirm">
+      <div class="modal-confirm-icon modal-confirm-icon-danger">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+        </svg>
+      </div>
+      <h3 class="modal-confirm-title">Supprimer ce contrôle ?</h3>
+      <p class="modal-confirm-text">Le vol <strong id="deleteVolNumero"></strong> et toutes ses données (points de contrôle, photos) seront <strong>définitivement supprimés</strong>. Cette action est irréversible.</p>
+      <div class="modal-confirm-actions">
+        <button class="btn btn-outline" id="btnAnnulerDeleteVol">Annuler</button>
+        <button class="btn btn-danger" id="btnConfirmerDeleteVol">Supprimer définitivement</button>
+      </div>
+    </div>
   </div>
 
   <!-- MODAL CONFIRMATION RETOUR -->

@@ -93,6 +93,19 @@
         </a>
       </nav>
 
+      <!-- Configuration -->
+      <div class="sidebar-section-label" style="margin-top:.5rem;">CONFIGURATION</div>
+      <nav class="sidebar-nav">
+        <a href="#" class="sidebar-link" data-view="sla">
+          <span class="sidebar-icon"><i class="fas fa-gauge-high"></i></span>
+          <span>SLA &amp; Nettoyage</span>
+        </a>
+        <a href="#" class="sidebar-link" data-view="compagnies">
+          <span class="sidebar-icon"><i class="fas fa-building"></i></span>
+          <span>Compagnies</span>
+        </a>
+      </nav>
+
       <!-- Footer email -->
       <div class="sidebar-footer-email">
         <i class="fas fa-envelope"></i>
@@ -112,10 +125,10 @@
           <div class="db-filter-group">
             <span class="db-filter-label">Période</span>
             <div class="db-pills">
-              <button class="db-pill active" data-filter="period" data-value="30">30 jours</button>
+              <button class="db-pill" data-filter="period" data-value="30">30 jours</button>
               <button class="db-pill" data-filter="period" data-value="7">7 jours</button>
               <button class="db-pill" data-filter="period" data-value="today">Aujourd'hui</button>
-              <button class="db-pill" data-filter="period" data-value="all">Tout</button>
+              <button class="db-pill active" data-filter="period" data-value="all">Tout</button>
             </div>
           </div>
           <div class="db-filter-group">
@@ -125,6 +138,10 @@
               <button class="db-pill" data-filter="typeVol" data-value="MP">MP</button>
               <button class="db-pill" data-filter="typeVol" data-value="GP">GP</button>
             </div>
+          </div>
+          <div class="db-filter-group">
+            <span class="db-filter-label">Mois</span>
+            <select id="dbFilterMois" class="db-select"><option value="">Tous les mois</option></select>
           </div>
           <div class="db-filter-group">
             <span class="db-filter-label">Agent</span>
@@ -253,6 +270,10 @@
               <select id="filterAgent"><option value="">Tous</option></select>
             </div>
             <div class="form-group form-group-inline">
+              <label>Mois</label>
+              <select id="filterMois"><option value="">Tous</option></select>
+            </div>
+            <div class="form-group form-group-inline">
               <label>Du</label>
               <input type="date" id="filterDateDe" />
             </div>
@@ -303,6 +324,10 @@
               <label>Sélectionner un agent</label>
               <select id="selectAgentDetail"><option value="">-- Choisir --</option></select>
             </div>
+            <div class="form-group form-group-inline">
+              <label>Mois</label>
+              <select id="selectAgentMois"><option value="">Tous les mois</option></select>
+            </div>
           </div>
         </div>
         <div id="agentDetailContent"></div>
@@ -332,8 +357,8 @@
               <select id="filterNcAgent"><option value="">Tous</option></select>
             </div>
             <div class="form-group form-group-inline">
-              <label>Date</label>
-              <input type="date" id="filterNcDate" />
+              <label>Mois</label>
+              <select id="filterNcMois"><option value="">Tous les mois</option></select>
             </div>
             <button class="btn btn-primary btn-sm" id="btnFiltrerNC">Filtrer</button>
           </div>
@@ -365,6 +390,18 @@
       <!-- ======== ANALYSE MOYEN-PORTEUR ======== -->
       <div id="viewAnalyseMP" class="view" style="display:none;">
         <div class="rapport-toolbar">
+          <div class="analyse-filter-group">
+            <label class="analyse-filter-label">De</label>
+            <select id="mpFilterFrom" class="db-select analyse-mois-select"></select>
+            <label class="analyse-filter-label">À</label>
+            <select id="mpFilterTo" class="db-select analyse-mois-select"></select>
+          </div>
+          <div class="analyse-filter-group">
+            <label class="analyse-filter-label">Compagnie</label>
+            <select id="mpFilterCie" class="db-select analyse-mois-select">
+              <option value="">Toutes</option>
+            </select>
+          </div>
           <button class="btn-refresh" id="btnRefreshMP">
             <i class="fas fa-rotate-right" id="iconRefreshMP"></i> Actualiser
           </button>
@@ -508,6 +545,18 @@
       <!-- ======== ANALYSE GROS-PORTEUR ======== -->
       <div id="viewAnalyseGP" class="view" style="display:none;">
         <div class="rapport-toolbar">
+          <div class="analyse-filter-group">
+            <label class="analyse-filter-label">De</label>
+            <select id="gpFilterFrom" class="db-select analyse-mois-select"></select>
+            <label class="analyse-filter-label">À</label>
+            <select id="gpFilterTo" class="db-select analyse-mois-select"></select>
+          </div>
+          <div class="analyse-filter-group">
+            <label class="analyse-filter-label">Compagnie</label>
+            <select id="gpFilterCie" class="db-select analyse-mois-select">
+              <option value="">Toutes</option>
+            </select>
+          </div>
           <button class="btn-refresh" id="btnRefreshGP">
             <i class="fas fa-rotate-right" id="iconRefreshGP"></i> Actualiser
           </button>
@@ -651,6 +700,87 @@
       </div>
 
       <!-- ======== EXPORT ======== -->
+      <!-- ======== COMPAGNIES ======== -->
+      <div id="viewCompagnies" class="view" style="display:none;">
+        <div class="page-title"><h2><i class="fas fa-building"></i> Gestion des compagnies</h2></div>
+
+        <!-- Formulaire ajout -->
+        <div class="card cie-add-card">
+          <div class="card-header"><h3>Ajouter une compagnie</h3></div>
+          <div class="card-body">
+            <form id="formAddCie" class="cie-add-form">
+              <div class="form-group">
+                <label>Code *</label>
+                <input type="text" id="cieCode" placeholder="ex: AT" maxlength="3"
+                       style="text-transform:uppercase" required />
+                <span class="cie-hint">2-3 lettres majuscules</span>
+              </div>
+              <div class="form-group">
+                <label>Nom complet *</label>
+                <input type="text" id="cieNom" placeholder="ex: Royal Air Maroc" required />
+              </div>
+              <button type="submit" class="btn btn-primary" id="btnAddCie">
+                <i class="fas fa-plus"></i> Ajouter
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Liste -->
+        <div class="card" style="margin-top:1.25rem;">
+          <div class="card-header">
+            <h3>Compagnies enregistrées</h3>
+            <span class="cie-count" id="cieCount">—</span>
+          </div>
+          <div class="card-body" id="cieListContent">
+            <div class="loading-state">Chargement…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======== SLA & NETTOYAGE ======== -->
+      <div id="viewSla" class="view" style="display:none;">
+        <div class="page-title"><h2><i class="fas fa-gauge-high"></i> SLA &amp; Agents de Nettoyage</h2></div>
+
+        <!-- Config cards -->
+        <div class="sla-section-title">
+          <i class="fas fa-sliders"></i> Configuration des standards
+          <span class="sla-section-hint">Définissez la durée maximale de nettoyage et le nombre d'agents requis par type de vol.</span>
+        </div>
+
+        <div class="sla-config-grid" id="slaConfigGrid">
+          <div class="loading-state">Chargement…</div>
+        </div>
+
+        <div class="sla-save-row">
+          <button class="btn btn-primary" id="btnSaveSla">
+            <i class="fas fa-floppy-disk"></i> Enregistrer la configuration
+          </button>
+          <span class="sla-save-status" id="slaSaveStatus"></span>
+        </div>
+
+        <!-- Séparateur -->
+        <div class="sla-divider"></div>
+
+        <!-- Stats conformité -->
+        <div class="sla-section-title">
+          <i class="fas fa-chart-bar"></i> Conformité SLA
+          <span class="sla-section-hint">Vols dont la durée réelle (heure début → heure fin) respecte le SLA configuré.</span>
+        </div>
+
+        <div class="sla-stats-filters">
+          <label>Mois</label>
+          <select id="slaStatsMois" class="db-select"><option value="">Tous les mois</option></select>
+          <button class="btn btn-outline btn-sm" id="btnSlaStatsRefresh">
+            <i class="fas fa-rotate-right"></i> Actualiser
+          </button>
+        </div>
+
+        <div id="slaStatsContent">
+          <div class="loading-state">Sélectionnez un mois et cliquez Actualiser.</div>
+        </div>
+      </div>
+
       <div id="viewExport" class="view" style="display:none;">
         <div class="page-title"><h2>📥 Export des données</h2></div>
         <div class="export-grid">
@@ -760,6 +890,23 @@
   </div>
 
   <div id="toastContainer" class="toast-container"></div>
+
+  <!-- MODAL SUPPRESSION VOL (admin/chef) -->
+  <div id="modalAdminDeleteVol" class="modal-overlay" style="display:none;">
+    <div class="modal modal-confirm">
+      <div class="modal-confirm-icon modal-confirm-icon-danger">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+        </svg>
+      </div>
+      <h3 class="modal-confirm-title">Supprimer ce contrôle ?</h3>
+      <p class="modal-confirm-text">Le vol <strong id="adminDeleteVolNumero"></strong> et toutes ses données (points de contrôle, photos, matériel) seront <strong>définitivement supprimés</strong>. Cette action est irréversible.</p>
+      <div class="modal-confirm-actions">
+        <button class="btn btn-outline" id="btnAnnulerAdminDeleteVol">Annuler</button>
+        <button class="btn btn-danger" id="btnConfirmerAdminDeleteVol">Supprimer définitivement</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ZONE D'IMPRESSION -->
   <div id="printZone" class="print-zone" style="display:none;"></div>

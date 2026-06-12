@@ -58,6 +58,25 @@ create table if not exists public.photos (
   uploaded_at timestamptz default now()
 );
 
+-- TABLE COMPAGNIES
+create table if not exists public.compagnies (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique check (char_length(code) between 1 and 3),
+  nom text not null,
+  actif boolean default true,
+  created_at timestamptz default now()
+);
+
+-- TABLE SLA_CONFIG
+create table if not exists public.sla_config (
+  id uuid primary key default gen_random_uuid(),
+  type_vol text not null unique,
+  sla_minutes integer not null default 45,
+  nb_agents_nettoyage integer not null default 3,
+  updated_at timestamptz default now(),
+  updated_by uuid references public.profiles(id)
+);
+
 -- TABLE MATERIELS_UTILISES
 create table if not exists public.materiels_utilises (
   id uuid primary key default gen_random_uuid(),
@@ -123,6 +142,10 @@ drop policy if exists "Agent gère ses photos" on public.photos;
 drop policy if exists "Admin voit toutes les photos" on public.photos;
 drop policy if exists "Agent gère ses matériels" on public.materiels_utilises;
 drop policy if exists "Admin voit tous les matériels" on public.materiels_utilises;
+drop policy if exists "Admin gère compagnies" on public.compagnies;
+drop policy if exists "Lecture compagnies authentifié" on public.compagnies;
+drop policy if exists "Admin gère SLA" on public.sla_config;
+drop policy if exists "Lecture SLA authentifié" on public.sla_config;
 drop policy if exists "Upload photos contrôle" on storage.objects;
 drop policy if exists "Lecture photos publique" on storage.objects;
 
@@ -197,6 +220,28 @@ create policy "Agent gère ses matériels"
 create policy "Admin voit tous les matériels"
   on public.materiels_utilises for all
   using (public.get_my_role() in ('admin', 'chef', 'superviseur'));
+
+-- Policies compagnies
+alter table public.compagnies enable row level security;
+
+create policy "Admin gère compagnies"
+  on public.compagnies for all
+  using (public.get_my_role() in ('admin', 'chef', 'superviseur'));
+
+create policy "Lecture compagnies authentifié"
+  on public.compagnies for select
+  using (auth.role() = 'authenticated');
+
+-- Policies sla_config
+alter table public.sla_config enable row level security;
+
+create policy "Admin gère SLA"
+  on public.sla_config for all
+  using (public.get_my_role() in ('admin', 'chef', 'superviseur'));
+
+create policy "Lecture SLA authentifié"
+  on public.sla_config for select
+  using (auth.role() = 'authenticated');
 
 -- Storage policies
 create policy "Upload photos contrôle"
