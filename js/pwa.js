@@ -65,7 +65,15 @@
   }
 
   // ── Prompt d'installation ─────────────────────────────────────
-  let deferredPrompt = null;
+  // Récupérer l'événement capturé tôt (avant le chargement de ce script)
+  let deferredPrompt = window.__pwaDeferred || null;
+
+  // Si déjà capturé, afficher le bouton topbar immédiatement
+  if (deferredPrompt) {
+    const btn = document.getElementById('pwa-topbar-install');
+    if (btn) btn.style.display = 'inline-flex';
+    if (!sessionStorage.getItem('pwa-install-dismissed')) showInstallBanner();
+  }
 
   // Exposer la fonction d'install pour le bouton topbar
   window.__pwaInstall = async function () {
