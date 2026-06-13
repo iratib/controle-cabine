@@ -67,15 +67,34 @@
   // ── Prompt d'installation ─────────────────────────────────────
   let deferredPrompt = null;
 
+  // Exposer la fonction d'install pour le bouton topbar
+  window.__pwaInstall = async function () {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      hideInstallBanner();
+      const btn = document.getElementById('pwa-topbar-install');
+      if (btn) btn.style.display = 'none';
+    }
+    deferredPrompt = null;
+  };
+
   window.addEventListener('beforeinstallprompt', event => {
     event.preventDefault();
     deferredPrompt = event;
+    // Afficher le bouton dans la topbar
+    const btn = document.getElementById('pwa-topbar-install');
+    if (btn) btn.style.display = 'inline-flex';
+    // Bannière seulement si pas déjà refusée
     if (!sessionStorage.getItem('pwa-install-dismissed')) showInstallBanner();
   });
 
   window.addEventListener('appinstalled', () => {
     hideInstallBanner();
     deferredPrompt = null;
+    const btn = document.getElementById('pwa-topbar-install');
+    if (btn) btn.style.display = 'none';
   });
 
   function showInstallBanner() {
