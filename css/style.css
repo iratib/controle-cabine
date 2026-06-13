@@ -3359,46 +3359,43 @@ input, select, textarea { font-family: var(--font); }
   display: inline-flex;
   align-items: center;
   gap: .4rem;
-  background: var(--bg-card, #1e293b);
-  border: 1.5px solid var(--border, #334155);
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
   border-radius: 10px;
-  padding: .35rem .6rem;
-  transition: border-color .2s;
+  padding: .4rem .75rem;
+  transition: border-color .2s, box-shadow .2s;
 }
 .time-picker-wrap:focus-within {
-  border-color: var(--ram-red, #be1e2d);
+  border-color: #be1e2d;
   box-shadow: 0 0 0 3px rgba(190,30,45,.15);
 }
 .time-picker-wrap .time-sel {
   background: transparent;
   border: none;
   outline: none;
-  color: var(--text-primary, #f1f5f9);
-  font-size: 1.45rem;
+  color: #0f172a;
+  font-size: 1.5rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-  padding: .15rem .2rem;
+  padding: .1rem .15rem;
   -webkit-appearance: none;
   appearance: none;
   text-align: center;
   min-width: 2.6rem;
 }
 .time-picker-wrap .time-sel option {
-  background: #1e293b;
-  color: #f1f5f9;
+  background: #ffffff;
+  color: #0f172a;
   font-size: 1rem;
 }
 .time-picker-wrap .time-colon {
-  font-size: 1.5rem;
+  font-size: 1.6rem;
   font-weight: 800;
-  color: var(--ram-red, #be1e2d);
+  color: #be1e2d;
   line-height: 1;
   margin: 0 .05rem;
   user-select: none;
-}
-.time-picker-wrap .time-sel-placeholder {
-  color: var(--text-muted, #64748b);
 }
 
 /* ── PWA : bannières installation & mise à jour ── */
