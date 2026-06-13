@@ -156,8 +156,8 @@
                   <input type="text" id="immatriculation" placeholder="ex: CN-RGT" maxlength="6" />
                 </div>
                 <div class="form-group">
-                  <label for="heureDebut">Heure début nettoyage</label>
-                  <input type="time" id="heureDebut" />
+                  <label>Heure début nettoyage</label>
+                  <div class="time-picker-wrap" id="heureDebutPicker"></div>
                 </div>
               </div>
               <div class="form-actions">
@@ -271,8 +271,8 @@
                 Heure début nettoyage : <strong id="rappelHeureDebut">—</strong>
               </div>
               <div class="form-group" style="margin:0;">
-                <label for="heureFin" style="font-weight:600;">Heure fin nettoyage *</label>
-                <input type="time" id="heureFin" class="form-control" style="max-width:160px;" />
+                <label style="font-weight:600;">Heure fin nettoyage *</label>
+                <div class="time-picker-wrap" id="heureFinPicker"></div>
               </div>
             </div>
             <div id="submitInfo" class="submit-info"></div>

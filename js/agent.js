@@ -596,9 +596,64 @@ async function loadCompagniesSelect() {
   }
 }
 
+// ---- TIME PICKER HELPERS ----
+
+function buildTimePicker(containerId, prefix) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+
+  const hSel = document.createElement('select');
+  hSel.id = prefix + 'H';
+  hSel.className = 'time-sel';
+  hSel.innerHTML = '<option value="">HH</option>';
+  for (let h = 0; h < 24; h++) {
+    const v = String(h).padStart(2, '0');
+    hSel.innerHTML += `<option value="${v}">${v}</option>`;
+  }
+
+  const colon = document.createElement('span');
+  colon.className = 'time-colon';
+  colon.textContent = ':';
+
+  const mSel = document.createElement('select');
+  mSel.id = prefix + 'M';
+  mSel.className = 'time-sel';
+  mSel.innerHTML = '<option value="">MM</option>';
+  for (let m = 0; m < 60; m += 5) {
+    const v = String(m).padStart(2, '0');
+    mSel.innerHTML += `<option value="${v}">${v}</option>`;
+  }
+
+  wrap.appendChild(hSel);
+  wrap.appendChild(colon);
+  wrap.appendChild(mSel);
+}
+
+function getTimePicker(prefix) {
+  const h = document.getElementById(prefix + 'H')?.value;
+  const m = document.getElementById(prefix + 'M')?.value;
+  return (h && m) ? `${h}:${m}` : null;
+}
+
+function setTimePicker(prefix, value) {
+  const hEl = document.getElementById(prefix + 'H');
+  const mEl = document.getElementById(prefix + 'M');
+  if (!hEl || !mEl) return;
+  if (!value) { hEl.value = ''; mEl.value = ''; return; }
+  const [hh, mm] = value.split(':');
+  hEl.value = hh || '';
+  const mmNum = parseInt(mm || '0');
+  const rounded = String(Math.round(mmNum / 5) * 5 % 60).padStart(2, '0');
+  mEl.value = rounded;
+}
+
 // ---- FORMULAIRE EN-TÊTE ----
 
 function setupFormEntete() {
+  // Construire les time pickers
+  buildTimePicker('heureDebutPicker', 'heureDebut');
+  buildTimePicker('heureFinPicker', 'heureFin');
+
   // Verrouiller le reste du formulaire jusqu'à la sélection du type de vol
   const formGrid = document.getElementById('formGrid');
   if (formGrid) formGrid.classList.add('locked');
@@ -620,12 +675,13 @@ function setupFormEntete() {
     this.value = this.value.replace(/[^0-9]/g, '').substring(0, 4);
   });
 
-  // Pas de contrainte min sur heureFin — les vols minuit (ex: 23:50→00:10) sont valides
-  document.getElementById('heureDebut').addEventListener('change', function () {
-    const fin = document.getElementById('heureFin');
-    fin.min = '';
-    // Effacer heureFin uniquement si elle est identique à heureDebut (durée nulle)
-    if (fin.value && fin.value === this.value) fin.value = '';
+  // Effacer heureFin si identique à heureDebut (durée nulle)
+  ['heureDebutH', 'heureDebutM'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => {
+      const debut = getTimePicker('heureDebut');
+      const fin = getTimePicker('heureFin');
+      if (debut && fin && fin === debut) setTimePicker('heureFin', null);
+    });
   });
 
   // Immatriculation : préfixe CN- verrouillé quand code cie = AT
@@ -685,7 +741,7 @@ function setupFormEntete() {
     const immatRaw = document.getElementById('immatriculation').value.trim();
     const immatriculation = immatRaw === 'CN-' ? '' : immatRaw;
     const typeVol = document.getElementById('typeVol').value;
-    const heureDebut = document.getElementById('heureDebut').value || null;
+    const heureDebut = getTimePicker('heureDebut');
 
     if (!typeVol) {
       showToast('Veuillez sélectionner le type de vol.', 'error');
@@ -698,7 +754,7 @@ function setupFormEntete() {
 
     // Afficher le rappel heure début dans la zone de soumission
     document.getElementById('rappelHeureDebut').textContent = heureDebut || '—';
-    document.getElementById('heureFin').value = '';
+    setTimePicker('heureFin', null);
 
     const btn = document.getElementById('btnCommencer');
     btn.disabled = true;
@@ -1343,16 +1399,16 @@ function confirmSoumission() {
     return;
   }
 
-  const heureFin = document.getElementById('heureFin').value || null;
+  const heureFin = getTimePicker('heureFin');
   const heureDebutVal = document.getElementById('rappelHeureDebut').textContent;
   if (!heureFin) {
     showToast('Veuillez renseigner l\'heure de fin de nettoyage avant de soumettre.', 'error');
-    document.getElementById('heureFin').focus();
+    document.getElementById('heureFinH')?.focus();
     return;
   }
   if (heureFin === heureDebutVal) {
     showToast('L\'heure de fin ne peut pas être identique à l\'heure de début.', 'error');
-    document.getElementById('heureFin').focus();
+    document.getElementById('heureFinH')?.focus();
     return;
   }
 
@@ -1404,7 +1460,7 @@ document.getElementById('btnConfirmerSoumission')?.addEventListener('click', asy
   try {
     await flushSaves();
     await autosaveMateriel();
-    const heureFin = document.getElementById('heureFin').value || null;
+    const heureFin = getTimePicker('heureFin');
     const { error } = await supabase.from('vols')
       .update({ statut: 'soumis', heure_fin: heureFin })
       .eq('id', currentVolId);
@@ -1818,9 +1874,9 @@ window.continueFiche = async function(volId) {
     // Déverrouiller le formGrid car le type est déjà défini
     const fg = document.getElementById('formGrid');
     if (fg) fg.classList.remove('locked');
-    document.getElementById('heureDebut').value = vol.heure_debut || '';
+    setTimePicker('heureDebut', vol.heure_debut || null);
     document.getElementById('rappelHeureDebut').textContent = vol.heure_debut || '—';
-    document.getElementById('heureFin').value = vol.heure_fin || '';
+    setTimePicker('heureFin', vol.heure_fin || null);
 
     afficherFiche(vol);
     restoreConformites();
