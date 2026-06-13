@@ -194,6 +194,7 @@ function setupNavigation() {
       else if (view === 'sla-config')     loadSlaConfigView();
       else if (view === 'sla-conformite') loadSlaConformiteView();
       else if (view === 'compagnies') loadCompagniesView();
+      else if (view === 'archive') loadArchiveView();
     });
   });
 }
@@ -209,7 +210,8 @@ function capitalize(str) {
     'slaconfig':      'Slaconfig',
     'sla-conformite': 'Slaconformite',
     'slaconformite':  'Slaconformite',
-    'compagnies': 'Compagnies'
+    'compagnies': 'Compagnies',
+    'archive': 'Archive'
   };
   return map[str] || str.charAt(0).toUpperCase() + str.slice(1);
 }
@@ -828,6 +830,7 @@ async function loadTousControles(filters = {}) {
           <td>${badge}</td>
           <td class="actions-cell">
             <button class="btn btn-outline btn-xs" onclick="adminViewFiche('${vol.id}', '${vol.numero_vol}', '${vol.date_vol}')">Voir</button>
+            ${['admin','chef'].includes(currentUser?.role) && vol.statut === 'soumis' ? `<button class="btn btn-outline btn-xs" style="color:#16a34a;border-color:#16a34a;" onclick="adminEditVol('${vol.id}','${vol.numero_vol.replace(/'/g,"\\'")}','${vol.date_vol}','${(vol.immatriculation||'').replace(/'/g,"\\'")}','${vol.type_vol}','${vol.heure_debut||''}','${vol.heure_fin||''}')"><i class="fas fa-pen"></i></button>` : ''}
             ${['admin','chef'].includes(currentUser?.role) ? `<button class="btn btn-danger btn-xs" onclick="adminConfirmDeleteVol('${vol.id}','${vol.numero_vol}')">🗑</button>` : ''}
           </td>
         </tr>
@@ -2574,6 +2577,74 @@ document.getElementById('btnConfirmerAdminDeleteVol')?.addEventListener('click',
   }
 });
 
+// ---- ÉDITION VOL (admin/chef) ----
+
+let _editVolId = null;
+let _editVolFilters = {};
+
+window.adminEditVol = function(volId, numero, date, immat, typeVol, heureDebut, heureFin) {
+  if (!['admin','chef'].includes(currentUser?.role)) return;
+  _editVolId = volId;
+  document.getElementById('editVolNumeroTitle').textContent = numero;
+  document.getElementById('editVolNumero').value = numero;
+  document.getElementById('editVolDate').value = date;
+  document.getElementById('editVolImmat').value = immat;
+  document.getElementById('editVolType').value = typeVol;
+  document.getElementById('editVolHeureDebut').value = heureDebut;
+  document.getElementById('editVolHeureFin').value = heureFin;
+  document.getElementById('editVolError').style.display = 'none';
+  document.getElementById('modalEditVol').style.display = 'flex';
+};
+
+document.getElementById('btnAnnulerEditVol')?.addEventListener('click', () => {
+  document.getElementById('modalEditVol').style.display = 'none';
+  _editVolId = null;
+});
+
+document.getElementById('btnConfirmerEditVol')?.addEventListener('click', async () => {
+  if (!_editVolId) return;
+  const numero = document.getElementById('editVolNumero').value.trim().toUpperCase();
+  const date   = document.getElementById('editVolDate').value.trim();
+  const immat  = document.getElementById('editVolImmat').value.trim().toUpperCase();
+  const type   = document.getElementById('editVolType').value;
+  const debut  = document.getElementById('editVolHeureDebut').value || null;
+  const fin    = document.getElementById('editVolHeureFin').value || null;
+  const errEl  = document.getElementById('editVolError');
+
+  if (!numero || !date || !type) {
+    errEl.textContent = 'N° vol, date et type sont obligatoires.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const btn     = document.getElementById('btnConfirmerEditVol');
+  const btnText = document.getElementById('btnEditVolText');
+  const spinner = document.getElementById('btnEditVolSpinner');
+  btn.disabled = true;
+  btnText.style.display = 'none';
+  spinner.style.display = 'inline';
+
+  try {
+    const { error } = await supabase
+      .from('vols')
+      .update({ numero_vol: numero, date_vol: date, immatriculation: immat, type_vol: type, heure_debut: debut, heure_fin: fin })
+      .eq('id', _editVolId);
+    if (error) throw error;
+    document.getElementById('modalEditVol').style.display = 'none';
+    _editVolId = null;
+    showToast('Vol modifié avec succès.', 'success');
+    loadTousControles();
+  } catch (err) {
+    errEl.textContent = 'Erreur lors de la modification.';
+    errEl.style.display = 'block';
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btnText.style.display = 'inline';
+    spinner.style.display = 'none';
+  }
+});
+
 // ---- SLA & NETTOYAGE ----
 
 // Référentiel OACI par catégorie — TRANSIT
@@ -3096,6 +3167,938 @@ async function loadDashboardSla() {
       loadSlaConformiteView();
     });
   });
+}
+
+// ---- ARCHIVAGE ----
+
+let archiveCurrentMonth = null;
+let archivePreviewData = null;
+
+async function loadArchiveView() {
+  const container = document.getElementById('viewArchive');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="page-title"><h2><i class="fas fa-box-archive"></i> Archivage des données</h2></div>
+
+    <div class="archive-info-banner">
+      <i class="fas fa-circle-info"></i>
+      <div>
+        <strong>Comment fonctionne l'archivage ?</strong>
+        <ol style="margin:.4rem 0 0 1.1rem;padding:0;line-height:1.7;">
+          <li>Sélectionnez une période passée et cliquez sur <strong>Prévisualiser</strong>.</li>
+          <li>Cliquez sur <strong>Générer le PDF</strong> pour télécharger un rapport complet avec les fiches et les photos.</li>
+          <li>Une fois le PDF vérifié et sauvegardé, cliquez sur <strong>Purger les photos</strong> pour libérer le stockage cloud.</li>
+        </ol>
+        Les statistiques et taux de conformité restent disponibles dans l'application indéfiniment.
+      </div>
+    </div>
+
+    <div id="archiveMigrationBanner" style="display:none;" class="archive-migration-banner">
+      <div class="archive-migration-inner">
+        <i class="fas fa-database"></i>
+        <div>
+          <strong>Migration requise — colonne manquante</strong><br>
+          Exécutez ces deux commandes SQL dans <a href="https://supabase.com/dashboard" target="_blank" style="color:#fcd34d;">Supabase SQL Editor</a> pour activer le suivi des archives :
+          <div class="archive-sql-block"><code>ALTER TABLE public.vols ADD COLUMN IF NOT EXISTS photos_archivees BOOLEAN DEFAULT FALSE;</code></div>
+          <div class="archive-sql-block" style="margin-top:.4rem;"><code>CREATE POLICY "Admin supprime photos storage" ON storage.objects FOR DELETE USING (bucket_id = 'photos-controle' AND public.get_my_role() IN ('admin','chef','superviseur'));</code></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-calendar-alt"></i> Sélectionner la période à archiver</h3></div>
+      <div class="card-body">
+        <div class="archive-quick-btns">
+          <span style="font-size:.8rem;color:#94a3b8;">Raccourcis :</span>
+          <button class="btn btn-sm btn-outline" onclick="setArchivePeriod(7)">7 derniers jours</button>
+          <button class="btn btn-sm btn-outline" onclick="setArchivePeriod(15)">15 jours</button>
+          <button class="btn btn-sm btn-outline" onclick="setArchivePeriod(30)">30 jours</button>
+          <button class="btn btn-sm btn-outline" onclick="setArchivePeriodMonth()">Mois complet</button>
+        </div>
+        <div class="archive-select-row" style="margin-top:.75rem;">
+          <div style="display:flex;align-items:center;gap:.5rem;">
+            <label style="font-size:.8rem;color:#94a3b8;white-space:nowrap;">Du</label>
+            <input type="date" id="archiveDateFrom" class="form-control" style="max-width:160px;" />
+          </div>
+          <div style="display:flex;align-items:center;gap:.5rem;">
+            <label style="font-size:.8rem;color:#94a3b8;white-space:nowrap;">Au</label>
+            <input type="date" id="archiveDateTo" class="form-control" style="max-width:160px;" />
+          </div>
+          <button class="btn btn-outline" onclick="previewArchiveMonth()">
+            <i class="fas fa-magnifying-glass"></i> Prévisualiser
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="archivePreviewSection" style="display:none;">
+      <div class="card">
+        <div class="card-header"><h3><i class="fas fa-eye"></i> Aperçu de l'archivage</h3></div>
+        <div class="card-body" id="archivePreviewBody">
+          <div class="loading-state">Analyse en cours…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-clock-rotate-left"></i> Historique des archives</h3></div>
+      <div class="card-body" id="archiveHistorique">
+        <div class="loading-state">Chargement…</div>
+      </div>
+    </div>
+  `;
+
+  // Initialise les dates sur les 7 derniers jours par défaut
+  setArchivePeriod(7);
+
+  await checkArchiveColumn();
+  await loadArchiveHistory();
+}
+
+async function checkArchiveColumn() {
+  if (isDemoMode) return;
+  const { error } = await supabase.from('vols').select('photos_archivees').limit(1);
+  if (error) {
+    const banner = document.getElementById('archiveMigrationBanner');
+    if (banner) banner.style.display = 'block';
+  }
+}
+
+async function loadArchiveHistory() {
+  const el = document.getElementById('archiveHistorique');
+  if (!el) return;
+
+  if (isDemoMode) {
+    el.innerHTML = '<p class="text-muted" style="text-align:center;padding:1rem;">Historique non disponible en mode démo.</p>';
+    return;
+  }
+
+  try {
+    const { data: vols, error } = await supabase
+      .from('vols')
+      .select('date_vol, numero_vol, photos_archivees')
+      .eq('photos_archivees', true)
+      .order('date_vol', { ascending: false });
+
+    if (error) { el.innerHTML = '<p class="text-muted" style="text-align:center;padding:1rem;">Migration requise pour afficher l\'historique.</p>'; return; }
+    if (!vols?.length) { el.innerHTML = '<p class="text-muted" style="text-align:center;padding:1rem;">Aucune archive enregistrée.</p>'; return; }
+
+    const byMonth = {};
+    vols.forEach(v => {
+      const key = v.date_vol.substring(0, 7);
+      byMonth[key] = (byMonth[key] || 0) + 1;
+    });
+
+    let html = '<table class="table"><thead><tr><th>Mois archivé</th><th>Vols</th><th>État</th></tr></thead><tbody>';
+    Object.entries(byMonth).sort((a, b) => b[0].localeCompare(a[0])).forEach(([key, count]) => {
+      const [y, m] = key.split('-');
+      const label = MONTH_NAMES_FULL[parseInt(m) - 1] + ' ' + y;
+      html += `<tr>
+        <td><strong>${label}</strong></td>
+        <td>${count} vol(s)</td>
+        <td><span class="badge badge-success"><i class="fas fa-check-circle"></i> Photos purgées</span></td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<p class="text-muted" style="text-align:center;padding:1rem;">Erreur de chargement.</p>';
+  }
+}
+
+window.setArchivePeriod = function(days) {
+  const to = new Date();
+  to.setDate(to.getDate() - 1); // hier max
+  const from = new Date(to);
+  from.setDate(from.getDate() - (days - 1));
+  const fmt = d => d.toISOString().split('T')[0];
+  const el1 = document.getElementById('archiveDateFrom');
+  const el2 = document.getElementById('archiveDateTo');
+  if (el1) el1.value = fmt(from);
+  if (el2) el2.value = fmt(to);
+};
+
+window.setArchivePeriodMonth = function() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const to = new Date(now.getFullYear(), now.getMonth(), 0);
+  const fmt = d => d.toISOString().split('T')[0];
+  const el1 = document.getElementById('archiveDateFrom');
+  const el2 = document.getElementById('archiveDateTo');
+  if (el1) el1.value = fmt(from);
+  if (el2) el2.value = fmt(to);
+};
+
+window.previewArchiveMonth = async function() {
+  const first = document.getElementById('archiveDateFrom')?.value;
+  const last = document.getElementById('archiveDateTo')?.value;
+  if (!first || !last) { showToast('Sélectionnez une plage de dates.', 'error'); return; }
+  if (first > last) { showToast('La date de début doit être avant la date de fin.', 'error'); return; }
+
+  archiveCurrentMonth = first + '_' + last;
+  const section = document.getElementById('archivePreviewSection');
+  section.style.display = 'block';
+  const body = document.getElementById('archivePreviewBody');
+  body.innerHTML = '<div class="loading-state">Analyse en cours…</div>';
+
+  try {
+    const { data: vols, error: volsErr } = await supabase
+      .from('vols')
+      .select('id, numero_vol, date_vol, type_vol, statut, agent_id, immatriculation, heure_debut, heure_fin, photos_archivees, source')
+      .gte('date_vol', first)
+      .lte('date_vol', last)
+      .order('date_vol')
+      .limit(500);
+
+    if (volsErr) throw volsErr;
+    if (!vols?.length) {
+      body.innerHTML = '<p class="text-muted" style="text-align:center;padding:1rem;">Aucun vol sur cette période.</p>';
+      return;
+    }
+
+    const volIds = vols.map(v => v.id);
+
+    const { data: photos } = await supabase.from('photos').select('id, vol_id, storage_path, url_publique').in('vol_id', volIds);
+
+    const photoCount = photos?.length || 0;
+    const alreadyArchived = vols.filter(v => v.photos_archivees).length;
+    const toArchive = vols.filter(v => !v.photos_archivees).length;
+
+    const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+    const periodLabel = `${fmtDate(first)} → ${fmtDate(last)}`;
+
+    archivePreviewData = { vols, volIds, photos: photos || [], month: archiveCurrentMonth, periodLabel };
+
+    const allDone = toArchive === 0 && photoCount === 0;
+    const estMinutes = Math.ceil(vols.length * 0.3 + photoCount * 0.15);
+
+    body.innerHTML = `
+      <p style="font-size:.8rem;color:#94a3b8;margin-bottom:.75rem;"><i class="fas fa-calendar-range"></i> Période : <strong style="color:#cbd5e1;">${periodLabel}</strong></p>
+      <div class="archive-stats-row">
+        <div class="archive-stat">
+          <span class="archive-stat-value">${vols.length}</span>
+          <span class="archive-stat-label">Vols</span>
+        </div>
+        <div class="archive-stat">
+          <span class="archive-stat-value">${toArchive}</span>
+          <span class="archive-stat-label">Non archivés</span>
+        </div>
+        <div class="archive-stat">
+          <span class="archive-stat-value">${photoCount}</span>
+          <span class="archive-stat-label">Photos stockage</span>
+        </div>
+        ${alreadyArchived > 0 ? `<div class="archive-stat archive-stat-done">
+          <span class="archive-stat-value">${alreadyArchived}</span>
+          <span class="archive-stat-label">Déjà archivés</span>
+        </div>` : ''}
+      </div>
+      ${allDone ? `
+        <div class="archive-already-done">
+          <i class="fas fa-check-circle"></i> Période déjà entièrement archivée — aucune photo dans le stockage.
+        </div>
+      ` : `
+        <div class="archive-action-row">
+          <button class="btn btn-primary" id="btnGenPDF" onclick="doGenerateArchivePDF()">
+            <i class="fas fa-file-pdf"></i> Générer le PDF (${vols.length} vols)
+          </button>
+          ${photoCount > 0 ? `
+            <button class="btn btn-danger" onclick="confirmPurgePhotos()">
+              <i class="fas fa-trash-can"></i> Purger ${photoCount} photo(s)
+            </button>
+          ` : ''}
+        </div>
+        <p class="archive-warning">
+          <i class="fas fa-circle-info"></i>
+          ${estMinutes > 2 ? `Durée estimée de génération du PDF : ~${estMinutes} min. ` : ''}
+          <strong>Les deux boutons sont indépendants</strong> — la purge ne se déclenche jamais automatiquement après le PDF.
+          ${photoCount === 0 ? ' Aucune photo à purger sur cette période.' : ''}
+        </p>
+      `}
+      <div id="archivePdfProgress" style="display:none;" class="archive-progress-bar">
+        <div id="archivePdfProgressInner"></div>
+      </div>
+    `;
+  } catch (e) {
+    body.innerHTML = `<p style="color:#f87171;">Erreur : ${e.message}</p>`;
+  }
+};
+
+window.doGenerateArchivePDF = async function() {
+  if (!archivePreviewData) return;
+  if (!window.jspdf) { showToast('Bibliothèque PDF non chargée. Rechargez la page.', 'error'); return; }
+
+  const btn = document.getElementById('btnGenPDF');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Génération…'; }
+
+  const progress = document.getElementById('archivePdfProgress');
+  const progressInner = document.getElementById('archivePdfProgressInner');
+  if (progress) progress.style.display = 'block';
+
+  try {
+    const { vols, volIds, month, periodLabel } = archivePreviewData;
+    const [first, last] = month.split('_');
+
+    const updateProgress = (pct, msg) => {
+      if (progressInner) progressInner.style.width = pct + '%';
+      if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${msg}`;
+    };
+
+    updateProgress(10, 'Récupération des points de contrôle…');
+    const controles = await fetchControlesForVols(volIds, 'id, zone, sous_zone, point_controle, conformite, observation, vol_id');
+
+    updateProgress(25, 'Récupération des photos…');
+    const { data: photos } = await supabase.from('photos').select('id, vol_id, controle_id, url_publique, storage_path').in('vol_id', volIds);
+
+    updateProgress(35, 'Récupération des agents et matériels…');
+    const { data: profiles } = await supabase.from('profiles').select('id, nom');
+    const profileMap = {};
+    (profiles || []).forEach(p => { profileMap[p.id] = p.nom; });
+
+    const MCHUNK = 50;
+    const allMats = [];
+    for (let i = 0; i < volIds.length; i += MCHUNK) {
+      const { data } = await supabase.from('materiels_utilises').select('vol_id, categorie, nom_materiel, quantite, utilise').in('vol_id', volIds.slice(i, i + MCHUNK));
+      if (data) allMats.push(...data);
+    }
+    const materielsParVol = {};
+    allMats.forEach(m => { if (!materielsParVol[m.vol_id]) materielsParVol[m.vol_id] = []; materielsParVol[m.vol_id].push(m); });
+
+    const controlesByVol = {};
+    const photosByVol = {};
+    controles.forEach(c => { if (!controlesByVol[c.vol_id]) controlesByVol[c.vol_id] = []; controlesByVol[c.vol_id].push(c); });
+    (photos || []).forEach(p => { if (!photosByVol[p.vol_id]) photosByVol[p.vol_id] = []; photosByVol[p.vol_id].push(p); });
+
+    updateProgress(45, `Génération du PDF (0/${vols.length} vols)…`);
+
+    await buildArchivePDF(vols, controlesByVol, photosByVol, materielsParVol, profileMap, periodLabel, first, last, (i) => {
+      const pct = 45 + Math.round((i / vols.length) * 50);
+      updateProgress(pct, `Génération du PDF (${i}/${vols.length} vols)…`);
+    });
+
+    updateProgress(100, 'PDF téléchargé !');
+    showToast('PDF généré et téléchargé avec succès.', 'success');
+    setTimeout(() => { if (progress) progress.style.display = 'none'; }, 2000);
+
+  } catch (e) {
+    showToast('Erreur génération PDF : ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-file-pdf"></i> Générer le PDF'; }
+  }
+};
+
+window.confirmPurgePhotos = function() {
+  if (!archivePreviewData) return;
+  const { photos, periodLabel } = archivePreviewData;
+  const el = document.getElementById('purgeModalText');
+  if (el) el.textContent = `Supprimer définitivement ${photos.length} photo(s) de la période ${periodLabel} du stockage cloud ?`;
+  document.getElementById('modalConfirmPurge').style.display = 'flex';
+};
+
+window.doPurgePhotos = async function() {
+  document.getElementById('modalConfirmPurge').style.display = 'none';
+  if (!archivePreviewData) return;
+  const { photos, volIds } = archivePreviewData;
+
+  showToast(`Suppression de ${photos.length} photo(s)…`, 'info');
+
+  try {
+    // Delete from Storage
+    const storagePaths = photos.map(p => p.storage_path).filter(Boolean);
+    if (storagePaths.length > 0) {
+      const CHUNK = 100;
+      for (let i = 0; i < storagePaths.length; i += CHUNK) {
+        await supabase.storage.from('photos-controle').remove(storagePaths.slice(i, i + CHUNK));
+      }
+    }
+
+    // Delete rows from photos table
+    const CHUNK = 20;
+    for (let i = 0; i < volIds.length; i += CHUNK) {
+      await supabase.from('photos').delete().in('vol_id', volIds.slice(i, i + CHUNK));
+    }
+
+    // Mark vols as archived
+    for (let i = 0; i < volIds.length; i += CHUNK) {
+      const { error } = await supabase.from('vols').update({ photos_archivees: true }).in('id', volIds.slice(i, i + CHUNK));
+      if (error && !error.message?.includes('photos_archivees')) throw error;
+    }
+
+    showToast(`${photos.length} photos supprimées du stockage.`, 'success');
+    archivePreviewData = null;
+    archiveCurrentMonth = null;
+    document.getElementById('archivePreviewSection').style.display = 'none';
+    await loadArchiveHistory();
+
+  } catch (e) {
+    showToast('Erreur lors de la purge : ' + e.message, 'error');
+  }
+};
+
+const MATERIEL_MASTER_ARCHIVE = {
+  'Seaux toilettes': ['Torchon rouge','Chamoisine','Brosse de toilette','Serpillière','Eau javel','Netal 20/50'],
+  'Seaux galley':    ['Torchon vert','Serpillière','Brosse galley','Decap four','Netal 20/50','Palette courte avec brosse'],
+  'Seaux cabine':    ['Torchon bleu','Decap four','Brosse bay bay','Brosse tapis','Naga gumm','Nettoyant écran']
+};
+
+function loadImageBase64Archive(url) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX = 1200;
+      let w = img.naturalWidth || img.width;
+      let h = img.naturalHeight || img.height;
+      if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve({ b64: canvas.toDataURL('image/jpeg', 0.8), w, h });
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+function loadLogoBase64Archive() {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      c.getContext('2d').drawImage(img, 0, 0);
+      resolve(c.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(null);
+    img.src = 'images/logo.png';
+  });
+}
+
+async function fetchImageAsBase64(url) {
+  const response = await fetch(url, { mode: 'cors' });
+  if (!response.ok) throw new Error('HTTP ' + response.status);
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function buildArchivePDF(vols, controlesByVol, photosByVol, materielsParVol, profileMap, periodLabel, dateFrom, dateTo, onProgress) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const W = 210, margin = 14;
+
+  const fileName = `Controles_${dateFrom}_au_${dateTo}.pdf`;
+
+  // === PAGE DE COUVERTURE ===
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, W, 297, 'F');
+  doc.setFillColor(59, 130, 246);
+  doc.rect(0, 118, W, 3, 'F');
+
+  // Logo
+  try {
+    const logoB64 = await fetchImageAsBase64('images/logo.png');
+    doc.addImage(logoB64, 'PNG', W / 2 - 15, 22, 30, 30);
+  } catch (_) {
+    // Logo non disponible — on affiche juste le texte
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(59, 130, 246);
+    doc.text('RAM HANDLING', W / 2, 38, { align: 'center' });
+  }
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text('RAM HANDLING — CONTRÔLE CABINES AVIONS', W / 2, 60, { align: 'center' });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(26);
+  doc.setTextColor(248, 250, 252);
+  doc.text("RAPPORT D'ARCHIVAGE", W / 2, 88, { align: 'center' });
+
+  // Période encadrée
+  doc.setFillColor(30, 41, 59);
+  doc.roundedRect(margin + 10, 96, W - (margin + 10) * 2, 18, 3, 3, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(59, 130, 246);
+  doc.text('PÉRIODE', W / 2, 104, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(203, 213, 225);
+  doc.text(periodLabel, W / 2, 110, { align: 'center' });
+
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}`, W / 2, 130, { align: 'center' });
+  doc.text(`${vols.length} vols contrôlés`, W / 2, 138, { align: 'center' });
+
+  // Blocs stats couverture
+  const totalCtrl = Object.values(controlesByVol).reduce((s, a) => s + a.length, 0);
+  const totalNC = Object.values(controlesByVol).reduce((s, a) => s + a.filter(c => c.conformite === 'NC').length, 0);
+  const totalPhotos = Object.values(photosByVol).reduce((s, a) => s + a.length, 0);
+  const tauxGlobal = totalCtrl > 0 ? Math.round(((totalCtrl - totalNC) / totalCtrl) * 100) : 0;
+
+  const statsBlocks = [
+    { val: vols.length, lbl: 'Vols' },
+    { val: totalCtrl, lbl: 'Points vérifiés' },
+    { val: totalNC, lbl: 'NC total' },
+    { val: tauxGlobal + '%', lbl: 'Taux conformité' },
+    { val: totalPhotos, lbl: 'Photos archivées' },
+  ];
+  const bW = 32, bH = 26, bGap = 3;
+  const totalBW = statsBlocks.length * (bW + bGap) - bGap;
+  const startX = (W - totalBW) / 2;
+  const bY = 162;
+
+  statsBlocks.forEach((b, i) => {
+    const bx = startX + i * (bW + bGap);
+    doc.setFillColor(30, 41, 59);
+    doc.roundedRect(bx, bY, bW, bH, 2, 2, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(59, 130, 246);
+    doc.text(String(b.val), bx + bW / 2, bY + 11, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(100, 116, 139);
+    doc.text(b.lbl, bx + bW / 2, bY + 20, { align: 'center' });
+  });
+
+  doc.setFontSize(7);
+  doc.setTextColor(51, 65, 85);
+  doc.text('Document confidentiel — Usage interne uniquement', W / 2, 285, { align: 'center' });
+
+  // === LOGO (chargé une seule fois) ===
+  const logoB64 = await loadLogoBase64Archive();
+
+  const RED   = [190, 30, 45];
+  const DKRED = [140, 20, 30];
+  const GREY  = [245, 245, 245];
+  const DGREY = [220, 220, 220];
+  const BLACK = [30, 30, 30];
+  const GREEN = [16, 185, 129];
+
+  function isChecklistVol(vol) {
+    return vol.source === 'app';
+  }
+
+  // === PAGES PAR VOL ===
+  for (let vi = 0; vi < vols.length; vi++) {
+    const vol = vols[vi];
+    doc.addPage();
+
+    const M = 10;
+    const colW = W - 2 * M;
+    const ctrl = controlesByVol[vol.id] || [];
+    const volPhotos = photosByVol[vol.id] || [];
+    const mats = materielsParVol[vol.id] || [];
+    const agentNom = profileMap[vol.agent_id] || '—';
+    const checklist = isChecklistVol(vol);
+
+    // ── BANDEAU TITRE (même style que fiche agent) ──
+    const headerH = 16;
+    doc.setFillColor(...RED);
+    doc.rect(M, M, colW, headerH, 'F');
+
+    if (logoB64) {
+      doc.addImage(logoB64, 'PNG', M + 3, M + 1.5, 38, 13);
+    } else {
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('RAM HANDLING', M + 4, M + 9);
+    }
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(vol.type_vol || '—', W - M - 2, M + 7, { align: 'right' });
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Fiche de Contrôle Cabine', W - M - 2, M + 13, { align: 'right' });
+
+    let y = M + headerH + 3;
+
+    // ── INFO VOL ──
+    const fields = [
+      { label: 'Date',            value: vol.date_vol || '—' },
+      { label: 'N° Vol',          value: vol.numero_vol || '—' },
+      { label: 'Immatriculation', value: vol.immatriculation || '—' },
+      { label: 'Début',           value: (vol.heure_debut || '—') },
+      { label: 'Fin',             value: (vol.heure_fin || '—') },
+      { label: 'Agent',           value: agentNom }
+    ];
+    const fw = colW / fields.length;
+    fields.forEach((f, i) => {
+      const x = M + i * fw;
+      doc.setFillColor(...DGREY);
+      doc.rect(x, y, fw, 5, 'F');
+      doc.setTextColor(...BLACK);
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'bold');
+      doc.text(f.label, x + fw / 2, y + 3.5, { align: 'center' });
+      doc.setFillColor(255, 255, 255);
+      doc.rect(x, y + 5, fw, 6, 'F');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(String(f.value), x + fw / 2, y + 9, { align: 'center' });
+    });
+    doc.setDrawColor(200, 200, 200);
+    doc.rect(M, y, colW, 11, 'S');
+    for (let i = 1; i < fields.length; i++) doc.line(M + i * fw, y, M + i * fw, y + 11);
+    y += 14;
+
+    const PAGE_H = 297, FOOTER_MARGIN = 15;
+    function checkPageBreak(needed) {
+      if (y + needed > PAGE_H - FOOTER_MARGIN) { doc.addPage(); y = M; }
+    }
+
+    if (checklist) {
+      // ══ FORMAT CHECKLIST (vols saisis via l'app) ══
+      const ctrlMap = {};
+      ctrl.forEach(c => { ctrlMap[`${c.zone}|${c.sous_zone || ''}|${c.point_controle}`] = c; });
+
+      // Photos par controle_id
+      const photosMap = {};
+      volPhotos.forEach(p => {
+        if (p.controle_id) {
+          if (!photosMap[p.controle_id]) photosMap[p.controle_id] = [];
+          photosMap[p.controle_id].push(p);
+        }
+      });
+
+      // Pré-charger images NC
+      const ncPhotoImgs = {};
+      for (const c of ctrl) {
+        if (c.conformite === 'NC') {
+          const ps = photosMap[c.id] || [];
+          if (ps.length > 0) {
+            const loaded = await Promise.all(ps.map(p => loadImageBase64Archive(p.url_publique)));
+            ncPhotoImgs[c.id] = loaded.filter(Boolean);
+          }
+        }
+      }
+
+      const structure = getFicheStructure(vol.type_vol);
+      const parties = [];
+      let lastPartie = null;
+      structure.forEach(sec => {
+        const partieLabel = sec.partie === 'Client'
+          ? 'PARTIE CLIENT'
+          : sec.partie === 'Équipage'
+            ? `PARTIE ÉQUIPAGE – ${sec.zone}${sec.sous_zone ? ' ' + sec.sous_zone : ''}`
+            : sec.zone;
+        if (partieLabel !== lastPartie) { parties.push({ label: partieLabel, sections: [] }); lastPartie = partieLabel; }
+        parties[parties.length - 1].sections.push(sec);
+      });
+
+      const colZone  = 25, colPoint = 72, colConf = 22, colNbr = 22;
+      const colObs   = colW - colZone - colPoint - colConf - colNbr;
+
+      function drawSectionHeader(label) {
+        checkPageBreak(7);
+        doc.setFillColor(...DKRED);
+        doc.rect(M, y, colW, 6, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.text(label, M + colW / 2, y + 4, { align: 'center' });
+        y += 6;
+      }
+
+      function drawTableHeader() {
+        checkPageBreak(6);
+        doc.setFillColor(...GREY);
+        doc.rect(M, y, colW, 5.5, 'F');
+        doc.setDrawColor(200, 200, 200);
+        doc.setTextColor(...BLACK);
+        doc.setFontSize(6.5);
+        doc.setFont('helvetica', 'bold');
+        let x = M;
+        doc.text('Zone',              x + colZone / 2,  y + 3.8, { align: 'center' }); x += colZone;
+        doc.text('Point de contrôle', x + colPoint / 2, y + 3.8, { align: 'center' }); x += colPoint;
+        doc.text('Conforme',          x + colConf / 2,  y + 3.8, { align: 'center' }); x += colConf;
+        doc.text('Non Conforme',      x + colNbr / 2,   y + 3.8, { align: 'center' }); x += colNbr;
+        doc.text('Observations',      x + colObs / 2,   y + 3.8, { align: 'center' });
+        y += 5.5;
+      }
+
+      function drawRow(zoneName, point, conf, obs, isShaded) {
+        const rowH = 6;
+        checkPageBreak(rowH);
+        if (isShaded) { doc.setFillColor(...GREY); doc.rect(M, y, colW, rowH, 'F'); }
+        doc.setDrawColor(220, 220, 220);
+        doc.rect(M, y, colW, rowH, 'S');
+        doc.setTextColor(...BLACK);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        let x = M;
+        doc.text(zoneName, x + 2, y + 4);
+        doc.line(x + colZone, y, x + colZone, y + rowH); x += colZone;
+        doc.text(doc.splitTextToSize(point, colPoint - 3)[0], x + 2, y + 4);
+        doc.line(x + colPoint, y, x + colPoint, y + rowH); x += colPoint;
+        if (conf === 'C') {
+          doc.setTextColor(...GREEN); doc.setFont('helvetica', 'bold');
+          doc.text('C', x + colConf / 2, y + 4, { align: 'center' });
+        } else {
+          doc.setTextColor(180, 180, 180); doc.setFont('helvetica', 'normal');
+          doc.text('—', x + colConf / 2, y + 4, { align: 'center' });
+        }
+        doc.setTextColor(...BLACK); doc.setFont('helvetica', 'normal');
+        doc.line(x + colConf, y, x + colConf, y + rowH); x += colConf;
+        if (conf === 'NC') {
+          doc.setTextColor(239, 68, 68); doc.setFont('helvetica', 'bold');
+          doc.text('NC', x + colNbr / 2, y + 4, { align: 'center' });
+        } else {
+          doc.setTextColor(180, 180, 180); doc.setFont('helvetica', 'normal');
+          doc.text('—', x + colNbr / 2, y + 4, { align: 'center' });
+        }
+        doc.setTextColor(...BLACK); doc.setFont('helvetica', 'normal');
+        doc.line(x + colNbr, y, x + colNbr, y + rowH); x += colNbr;
+        if (obs) { doc.setFontSize(6.5); doc.text(doc.splitTextToSize(obs, colObs - 3)[0], x + 2, y + 4); }
+        y += rowH;
+      }
+
+      parties.forEach(partie => {
+        drawSectionHeader(partie.label);
+        drawTableHeader();
+        partie.sections.forEach(sec => {
+          sec.points.forEach((point, idx) => {
+            const c = ctrlMap[`${sec.zone}|${sec.sous_zone || ''}|${point}`];
+            drawRow(
+              idx === 0 ? (sec.sous_zone ? `${sec.zone} (${sec.sous_zone})` : sec.zone) : '',
+              point, c?.conformite || '', c?.observation || '', idx % 2 === 1
+            );
+          });
+        });
+        y += 2;
+      });
+
+      // ── MATÉRIEL UTILISÉ ──
+      if (mats.length > 0) {
+        checkPageBreak(8);
+        doc.setFillColor(...DKRED);
+        doc.rect(M, y, colW, 6, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Matériel utilisé', M + colW / 2, y + 4, { align: 'center' });
+        y += 7;
+
+        const aspRow    = mats.find(m => m.categorie === 'Nombre aspirateurs');
+        const agentsRow = mats.find(m => m.categorie === 'Nombre agents');
+        checkPageBreak(6);
+        doc.setFillColor(...GREY);
+        doc.rect(M, y, colW, 5.5, 'F');
+        doc.setTextColor(...BLACK);
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Nombre aspirateurs : ${aspRow ? aspRow.quantite : 0}`, M + 4, y + 3.8);
+        doc.text(`Nombre agents : ${agentsRow ? agentsRow.quantite : 0}`, M + colW / 2 + 4, y + 3.8);
+        y += 7;
+
+        const matsChecked = new Set(mats.filter(m => m.utilise).map(m => `${m.categorie}|${m.nom_materiel}`));
+        const categories = Object.keys(MATERIEL_MASTER_ARCHIVE);
+        const catCols = Math.floor(colW / categories.length);
+        const startMatY = y;
+        let maxRowY = startMatY;
+
+        categories.forEach((cat, ci) => {
+          const allItems = MATERIEL_MASTER_ARCHIVE[cat];
+          const x = M + ci * catCols;
+          checkPageBreak(6 + allItems.length * 5);
+          doc.setFillColor(...DGREY);
+          doc.rect(x, startMatY, catCols, 5.5, 'F');
+          doc.setTextColor(...BLACK);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.text(cat, x + catCols / 2, startMatY + 3.8, { align: 'center' });
+          let rowY = startMatY + 5.5;
+          allItems.forEach((nom, mi) => {
+            const checked = matsChecked.has(`${cat}|${nom}`);
+            if (mi % 2 === 0) doc.setFillColor(252, 252, 252); else doc.setFillColor(...GREY);
+            doc.rect(x, rowY, catCols, 5, 'F');
+            if (checked) {
+              doc.setFillColor(...GREEN);
+              doc.circle(x + 4.5, rowY + 2.5, 1.8, 'F');
+              doc.setTextColor(255, 255, 255);
+              doc.setFontSize(6);
+              doc.setFont('helvetica', 'bold');
+              doc.text('✓', x + 4.5, rowY + 3.1, { align: 'center' });
+              doc.setTextColor(...BLACK);
+              doc.setFontSize(6.5);
+              doc.setFont('helvetica', 'bold');
+              doc.text(nom, x + 8, rowY + 3.4);
+            } else {
+              doc.setDrawColor(200, 200, 200);
+              doc.circle(x + 4.5, rowY + 2.5, 1.8, 'S');
+              doc.setTextColor(180, 180, 180);
+              doc.setFontSize(6.5);
+              doc.setFont('helvetica', 'normal');
+              doc.text(nom, x + 8, rowY + 3.4);
+            }
+            rowY += 5;
+            if (rowY > maxRowY) maxRowY = rowY;
+          });
+        });
+        y = maxRowY + 3;
+      }
+
+      // ── ANNEXE PHOTOS NC ──
+      const ncWithPhotos = ctrl.filter(c => c.conformite === 'NC' && (ncPhotoImgs[c.id] || []).length > 0);
+      if (ncWithPhotos.length > 0) {
+        checkPageBreak(10);
+        doc.setFillColor(...RED);
+        doc.rect(M, y, colW, 6, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Annexe – Photos des anomalies', M + colW / 2, y + 4, { align: 'center' });
+        y += 8;
+
+        const structure2 = getFicheStructure(vol.type_vol);
+        structure2.forEach(sec => {
+          sec.points.forEach(point => {
+            const c = ctrlMap[`${sec.zone}|${sec.sous_zone || ''}|${point}`];
+            if (!c || c.conformite !== 'NC') return;
+            const imgs = ncPhotoImgs[c.id] || [];
+            if (!imgs.length) return;
+            const sectionLabel = sec.sous_zone ? `${sec.zone} – ${sec.sous_zone}` : sec.zone;
+            checkPageBreak(12);
+            doc.setFillColor(255, 240, 240);
+            doc.rect(M, y, colW, 7, 'F');
+            doc.setDrawColor(...RED);
+            doc.rect(M, y, colW, 7, 'S');
+            doc.setTextColor(...RED);
+            doc.setFontSize(7);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`${sectionLabel}  —  ${point}`, M + 3, y + 4.5);
+            y += 7;
+            if (c.observation) {
+              checkPageBreak(6);
+              doc.setFillColor(255, 248, 248);
+              doc.rect(M, y, colW, 5, 'F');
+              doc.setTextColor(100, 100, 100);
+              doc.setFontSize(6.5);
+              doc.setFont('helvetica', 'italic');
+              doc.text(`Obs : ${doc.splitTextToSize(c.observation, colW - 6)[0]}`, M + 3, y + 3.5);
+              y += 5;
+            }
+            const photoW = (colW - 4) / 2;
+            const photoMaxH = 65;
+            for (let i = 0; i < imgs.length; i += 2) {
+              const rowImgs = [imgs[i], imgs[i + 1]].filter(Boolean);
+              let rowH = 0;
+              rowImgs.forEach(imgData => {
+                const iH = Math.min(photoW / (imgData.w / imgData.h), photoMaxH);
+                if (iH > rowH) rowH = iH;
+              });
+              checkPageBreak(rowH + 6);
+              rowImgs.forEach((imgData, col) => {
+                const x = M + col * (photoW + 4);
+                const aspect = imgData.w / imgData.h;
+                let iW = photoW, iH = photoW / aspect;
+                if (iH > photoMaxH) { iH = photoMaxH; iW = photoMaxH * aspect; }
+                doc.addImage(imgData.b64, 'JPEG', x, y, iW, iH);
+                doc.setDrawColor(200, 200, 200);
+                doc.rect(x, y, iW, iH, 'S');
+                doc.setFontSize(6);
+                doc.setTextColor(150, 150, 150);
+                doc.setFont('helvetica', 'normal');
+                doc.text(`Photo ${i + col + 1}`, x + 1, y + iH - 1);
+              });
+              y += rowH + 4;
+            }
+            y += 4;
+          });
+        });
+      }
+
+    } else {
+      // ══ FORMAT TABLEAU PLAT (anciens vols / migration) ══
+      if (ctrl.length === 0) {
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text('Aucun point de contrôle enregistré pour ce vol.', M, y + 6);
+      } else {
+        doc.autoTable({
+          startY: y,
+          head: [['Zone', 'Point de contrôle', 'C/NC', 'Observation']],
+          body: ctrl.map(c => [c.zone || '', c.point_controle || '', c.conformite || '—', (c.observation || '').substring(0, 120)]),
+          styles: { fontSize: 6.5, cellPadding: 1.8, overflow: 'linebreak' },
+          headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold', fontSize: 7 },
+          alternateRowStyles: { fillColor: [248, 250, 252] },
+          columnStyles: {
+            0: { cellWidth: 30 },
+            1: { cellWidth: 68 },
+            2: { cellWidth: 13, halign: 'center', fontStyle: 'bold' },
+            3: { cellWidth: 71 }
+          },
+          didParseCell(data) {
+            if (data.section === 'body' && data.column.index === 2) {
+              if (data.cell.raw === 'NC') data.cell.styles.textColor = [220, 38, 38];
+              else if (data.cell.raw === 'C') data.cell.styles.textColor = [22, 163, 74];
+            }
+          },
+          margin: { left: M, right: M }
+        });
+        y = doc.lastAutoTable.finalY + 5;
+      }
+
+      // Photos brutes pour anciens vols
+      if (volPhotos.length > 0) {
+        checkPageBreak(10);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(...BLACK);
+        doc.text(`Photos (${volPhotos.length})`, M, y);
+        y += 5;
+        let x = M;
+        const pW = 56, pH = 38, pGap = 3;
+        const maxP = Math.min(volPhotos.length, 6);
+        for (let pi = 0; pi < maxP; pi++) {
+          try {
+            const imgData = await loadImageBase64Archive(volPhotos[pi].url_publique);
+            if (!imgData) continue;
+            if (x + pW > W - M) { x = M; y += pH + pGap; }
+            if (y + pH > PAGE_H - FOOTER_MARGIN) { doc.addPage(); y = M; x = M; }
+            doc.addImage(imgData.b64, 'JPEG', x, y, pW, pH);
+            x += pW + pGap;
+          } catch (_) {}
+        }
+        if (volPhotos.length > maxP) {
+          doc.setFont('helvetica', 'italic');
+          doc.setFontSize(7);
+          doc.setTextColor(100, 116, 139);
+          doc.text(`+ ${volPhotos.length - maxP} photo(s) supplémentaire(s)`, M, y + pH + 4);
+        }
+      }
+    }
+
+    if (onProgress) onProgress(vi + 1);
+  }
+
+  // ── PIED DE PAGE sur toutes les pages (sauf couverture) ──
+  const pageCount = doc.getNumberOfPages();
+  for (let p = 2; p <= pageCount; p++) {
+    doc.setPage(p);
+    doc.setDrawColor(...DGREY);
+    doc.line(10, 285, W - 10, 285);
+    doc.setFontSize(7);
+    doc.setTextColor(160, 160, 160);
+    doc.setFont('helvetica', 'normal');
+    doc.text('RAM HANDLING – Contrôle Cabine', 10, 290);
+    doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, W - 10, 290, { align: 'right' });
+    doc.text(`Page ${p - 1}/${pageCount - 1}`, W / 2, 290, { align: 'center' });
+  }
+
+  doc.save(fileName);
 }
 
 // ---- DÉMARRAGE ----

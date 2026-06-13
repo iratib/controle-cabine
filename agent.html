@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agent – Contrôle Cabines</title>
   <link rel="icon" type="image/png" href="images/logo.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#be1e2d" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Ctrl Cabine" />
+  <link rel="apple-touch-icon" href="/images/logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" />
@@ -67,6 +74,10 @@
           <span class="sidebar-icon"><i class="fas fa-list-check"></i></span>
           <span>Mes contrôles</span>
           <span class="badge" id="badgeEnCours" style="display:none;">0</span>
+        </a>
+        <a href="#" class="sidebar-link" data-view="sla">
+          <span class="sidebar-icon"><i class="fas fa-clipboard-list"></i></span>
+          <span>Procédures SLA</span>
         </a>
         <a href="#" class="sidebar-link" id="btnMonCompte">
           <span class="sidebar-icon"><i class="fas fa-key"></i></span>
@@ -145,10 +156,6 @@
                 <div class="form-group">
                   <label for="heureDebut">Heure début nettoyage</label>
                   <input type="time" id="heureDebut" />
-                </div>
-                <div class="form-group">
-                  <label for="heureFin">Heure fin nettoyage</label>
-                  <input type="time" id="heureFin" />
                 </div>
               </div>
               <div class="form-actions">
@@ -254,8 +261,18 @@
             </div>
           </div>
 
-          <!-- Bouton soumettre -->
+          <!-- Heure fin + bouton soumettre -->
           <div class="submit-section">
+            <div class="heure-fin-block">
+              <div class="heure-fin-rappel">
+                <i class="fas fa-clock"></i>
+                Heure début nettoyage : <strong id="rappelHeureDebut">—</strong>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label for="heureFin" style="font-weight:600;">Heure fin nettoyage *</label>
+                <input type="time" id="heureFin" class="form-control" style="max-width:160px;" />
+              </div>
+            </div>
             <div id="submitInfo" class="submit-info"></div>
             <button class="btn btn-success btn-xl" id="btnSoumettre">
               ✅ Soumettre le contrôle
@@ -281,6 +298,86 @@
           <button class="btn btn-outline btn-sm" id="btnPrevPage">← Précédent</button>
           <span id="paginationInfo" class="mc-page-info"></span>
           <button class="btn btn-outline btn-sm" id="btnNextPage">Suivant →</button>
+        </div>
+      </div>
+
+      <!-- ======== VUE : PROCÉDURES SLA ======== -->
+      <div id="viewSla" class="view" style="display:none;">
+        <div class="page-title">
+          <h2><i class="fas fa-clipboard-list"></i> Procédures SLA — Référentiel nettoyage</h2>
+        </div>
+
+        <div class="sla-agent-info-banner">
+          <i class="fas fa-info-circle"></i>
+          Ce référentiel est fourni à titre consultatif. Les durées SLA et les effectifs sont définis par la direction.
+          <strong>Aucune modification n'est possible depuis cette session.</strong>
+        </div>
+
+        <!-- CONSIGNES TYPES DE NETTOYAGE -->
+        <div class="sla-consignes-grid">
+          <div class="sla-consigne-card sla-consigne-transit">
+            <div class="sla-consigne-header">
+              <span class="sla-consigne-icon"><i class="fas fa-bolt"></i></span>
+              <div>
+                <div class="sla-consigne-title">Nettoyage Transit</div>
+                <div class="sla-consigne-subtitle">Escale courte — intervention prioritaire</div>
+              </div>
+            </div>
+            <div class="sla-consigne-durees">
+              <div class="sla-consigne-duree-row">
+                <span class="sla-consigne-avion-type"><i class="fas fa-plane"></i> Petits &amp; Moyens porteurs</span>
+                <span class="sla-consigne-duree-val">Escale &lt; 1h15min</span>
+              </div>
+              <div class="sla-consigne-duree-row">
+                <span class="sla-consigne-avion-type"><i class="fas fa-plane"></i> Gros porteurs</span>
+                <span class="sla-consigne-duree-val">Escale &lt; 1h45min</span>
+              </div>
+            </div>
+            <p class="sla-consigne-desc">
+              Le nettoyage transit est effectué lors des escales courtes. Ce type de nettoyage est limité et se concentre sur les interventions prioritaires pour assurer un environnement propre à bord avant le prochain vol.
+            </p>
+          </div>
+
+          <div class="sla-consigne-card sla-consigne-complet">
+            <div class="sla-consigne-header">
+              <span class="sla-consigne-icon"><i class="fas fa-star"></i></span>
+              <div>
+                <div class="sla-consigne-title">Nettoyage Complet</div>
+                <div class="sla-consigne-subtitle">Escale longue — intervention approfondie</div>
+              </div>
+            </div>
+            <div class="sla-consigne-durees">
+              <div class="sla-consigne-duree-row">
+                <span class="sla-consigne-avion-type"><i class="fas fa-plane"></i> Petits &amp; Moyens porteurs</span>
+                <span class="sla-consigne-duree-val">Escale &gt; 1h15min</span>
+              </div>
+              <div class="sla-consigne-duree-row">
+                <span class="sla-consigne-avion-type"><i class="fas fa-plane"></i> Gros porteurs</span>
+                <span class="sla-consigne-duree-val">Escale &gt; 1h45min</span>
+              </div>
+            </div>
+            <p class="sla-consigne-desc">
+              Le nettoyage complet est effectué lors des escales longues. Ce type de nettoyage permet une intervention plus approfondie et complète de toutes les zones de l'avion.
+            </p>
+          </div>
+        </div>
+
+        <!-- TRANSIT -->
+        <div class="sla-section-title">
+          <i class="fas fa-gauge-high"></i> Standards Transit
+          <span class="sla-section-hint">Durée SLA et effectif agents requis par catégorie d'appareil — vols en transit.</span>
+        </div>
+        <div class="sla-cat-grid" id="agentSlaGridTransit">
+          <div class="loading-state"><i class="fas fa-spinner fa-spin"></i> Chargement…</div>
+        </div>
+
+        <!-- STOP CMN -->
+        <div class="sla-section-title" style="margin-top:2rem;">
+          <i class="fas fa-circle-stop"></i> Standards Stop CMN
+          <span class="sla-section-hint">Durée SLA et effectif agents requis par catégorie d'appareil — vols Stop CMN.</span>
+        </div>
+        <div class="sla-cat-grid" id="agentSlaGridStop">
+          <div class="loading-state"><i class="fas fa-spinner fa-spin"></i> Chargement…</div>
         </div>
       </div>
 
@@ -422,6 +519,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <script type="module" src="js/agent.js"></script>
-
+  <script src="/js/pwa.js"></script>
 </body>
 </html>

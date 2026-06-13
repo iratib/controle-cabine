@@ -333,6 +333,25 @@ let controles = {}; // clé = "zone|sous_zone|point", valeur = { conformite, obs
 let autosaveTimeout = null;
 let isOffline = false;
 
+// ---- RÉFÉRENTIEL SLA ----
+const SLA_CATEGORIES_TRANSIT = [
+  { key: 'transit_cat2', label: 'Catégorie II',  seats: '≤ 41 sièges',      avions: ['M81','M87','AR1','CRJ'],            slaMin: 10, slaMax: 12, agents: { cabine: 2,  galley: 1, sanitaire: 1, aspirateur: 0 } },
+  { key: 'transit_cat3', label: 'Catégorie III', seats: '42 – 90 sièges',   avions: ['AT7'],                              slaMin: 10, slaMax: 12, agents: { cabine: 2,  galley: 1, sanitaire: 1, aspirateur: 0 } },
+  { key: 'transit_cat4', label: 'Catégorie IV',  seats: '91 – 120 sièges',  avions: ['B73G','E190','CRJ1000'],            slaMin: 15, slaMax: 17, agents: { cabine: 5,  galley: 1, sanitaire: 1, aspirateur: 1 } },
+  { key: 'transit_cat5', label: 'Catégorie V',   seats: '121 – 200 sièges', avions: ['B738','A321','A320','A319'],        slaMin: 15, slaMax: 17, agents: { cabine: 5,  galley: 1, sanitaire: 1, aspirateur: 1 } },
+  { key: 'transit_cat6', label: 'Catégorie VI',  seats: '201 – 350 sièges', avions: ['B787','B767','B777','A330','A340'], slaMin: 30, slaMax: 35, agents: { cabine: 10, galley: 2, sanitaire: 2, aspirateur: 2 } },
+  { key: 'transit_cat7', label: 'Catégorie VII', seats: '> 351 sièges',     avions: ['A380','B744'],                     slaMin: 30, slaMax: 35, agents: { cabine: 15, galley: 4, sanitaire: 4, aspirateur: 4 } },
+];
+const SLA_CATEGORIES_STOP = [
+  { key: 'stop_cat2', label: 'Catégorie II',  seats: '≤ 41 sièges',      avions: ['M81','M87','AR1','CRJ'],            slaMin: 15, slaMax: 18, agents: { cabine: 2,  galley: 1, sanitaire: 1, aspirateur: 0 } },
+  { key: 'stop_cat3', label: 'Catégorie III', seats: '42 – 90 sièges',   avions: ['AT7'],                              slaMin: 15, slaMax: 18, agents: { cabine: 2,  galley: 1, sanitaire: 1, aspirateur: 0 } },
+  { key: 'stop_cat4', label: 'Catégorie IV',  seats: '91 – 120 sièges',  avions: ['B73G','E190','CRJ1000'],            slaMin: 25, slaMax: 28, agents: { cabine: 5,  galley: 1, sanitaire: 1, aspirateur: 1 } },
+  { key: 'stop_cat5', label: 'Catégorie V',   seats: '121 – 200 sièges', avions: ['B738','A321','A320','A319'],        slaMin: 25, slaMax: 28, agents: { cabine: 5,  galley: 1, sanitaire: 1, aspirateur: 1 } },
+  { key: 'stop_cat6', label: 'Catégorie VI',  seats: '201 – 350 sièges', avions: ['B787','B767','B777','A330','A340'], slaMin: 45, slaMax: 50, agents: { cabine: 10, galley: 2, sanitaire: 2, aspirateur: 2 } },
+  { key: 'stop_cat7', label: 'Catégorie VII', seats: '> 351 sièges',     avions: ['A380','B744'],                     slaMin: 45, slaMax: 50, agents: { cabine: 15, galley: 4, sanitaire: 4, aspirateur: 4 } },
+];
+let agentSlaCache = {};
+
 // ---- INIT ----
 
 async function init() {
@@ -451,7 +470,96 @@ function showView(viewName) {
     mcCurrentPeriod = 'today';
     document.querySelectorAll('.mc-tab').forEach(t => t.classList.toggle('active', t.dataset.period === 'today'));
     loadMesControles();
+  } else if (viewName === 'sla') {
+    document.getElementById('viewSla').style.display = 'block';
+    loadAgentSlaView();
   }
+}
+
+// ---- PROCÉDURES SLA (lecture seule) ----
+
+async function loadAgentSlaView() {
+  if (Object.keys(agentSlaCache).length === 0 && !isDemoMode) {
+    const { data } = await supabase.from('sla_config').select('*');
+    (data || []).forEach(r => { agentSlaCache[r.type_vol] = r; });
+  }
+  renderAgentSlaGrid(SLA_CATEGORIES_TRANSIT, 'agentSlaGridTransit', 'Transit');
+  renderAgentSlaGrid(SLA_CATEGORIES_STOP,    'agentSlaGridStop',    'Stop');
+}
+
+function renderAgentSlaGrid(cats, gridId, suffix) {
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
+
+  grid.innerHTML = cats.map(t => {
+    const cached     = agentSlaCache[t.key] || {};
+    const slaMax     = cached.sla_minutes     ?? t.slaMax;
+    const slaMin     = t.slaMin;
+    const cabine     = t.agents.cabine;
+    const galley     = t.agents.galley;
+    const sanitaire  = t.agents.sanitaire;
+    const aspirateur = t.agents.aspirateur;
+    const total      = cached.nb_agents_nettoyage ?? (cabine + galley + sanitaire + aspirateur);
+
+    const avionTags = t.avions.map(a => `<span class="sla-avion-tag">${a}</span>`).join('');
+
+    return `
+      <div class="sla-cat-card sla-cat-card-readonly">
+        <div class="sla-cat-header">
+          <div class="sla-cat-title-row">
+            <span class="sla-cat-label">${t.label}</span>
+            <span class="sla-cat-type-badge">${suffix === 'Transit' ? 'TRANSIT' : 'STOP CMN'}</span>
+          </div>
+          <div class="sla-cat-seats"><i class="fas fa-chair"></i> ${t.seats}</div>
+        </div>
+        <div class="sla-cat-body">
+
+          <div class="sla-cat-avions">${avionTags}</div>
+
+          <div class="sla-cat-section">
+            <div class="sla-cat-section-label"><i class="fas fa-clock"></i> Durée SLA ${suffix === 'Transit' ? 'Transit' : 'Stop CMN'}</div>
+            <div class="sla-readonly-range">
+              <span class="sla-readonly-val">${slaMin}</span>
+              <span class="sla-range-sep">→</span>
+              <span class="sla-readonly-val">${slaMax}</span>
+              <span class="sla-unit">min</span>
+            </div>
+          </div>
+
+          <div class="sla-cat-section">
+            <div class="sla-cat-section-label"><i class="fas fa-users"></i> Agents requis</div>
+            <div class="sla-agents-breakdown">
+              <div class="sla-agent-row">
+                <span class="sla-agent-label">Cabine</span>
+                <span class="sla-readonly-count">${cabine}</span>
+                <span class="sla-unit">ag.</span>
+              </div>
+              <div class="sla-agent-row">
+                <span class="sla-agent-label">Galley</span>
+                <span class="sla-readonly-count">${galley}</span>
+                <span class="sla-unit">ag.</span>
+              </div>
+              <div class="sla-agent-row">
+                <span class="sla-agent-label">Sanitaire</span>
+                <span class="sla-readonly-count">${sanitaire}</span>
+                <span class="sla-unit">ag.</span>
+              </div>
+              <div class="sla-agent-row">
+                <span class="sla-agent-label">Aspirateur + J</span>
+                <span class="sla-readonly-count">${aspirateur}</span>
+                <span class="sla-unit">ag.</span>
+              </div>
+              <div class="sla-agents-total-row">
+                <span>Total</span>
+                <span class="sla-total-value">${total}</span>
+                <span class="sla-unit">agents</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>`;
+  }).join('');
 }
 
 // ---- COMPAGNIES ----
@@ -572,7 +680,6 @@ function setupFormEntete() {
     const immatriculation = immatRaw === 'CN-' ? '' : immatRaw;
     const typeVol = document.getElementById('typeVol').value;
     const heureDebut = document.getElementById('heureDebut').value || null;
-    const heureFin = document.getElementById('heureFin').value || null;
 
     if (!typeVol) {
       showToast('Veuillez sélectionner le type de vol.', 'error');
@@ -582,12 +689,10 @@ function setupFormEntete() {
       showToast('Veuillez remplir les champs obligatoires (date, code cie, numéro de vol).', 'error');
       return;
     }
-    // Refuser uniquement si heureDebut === heureFin (durée nulle)
-    // Les passages minuit (ex: 23:50 → 00:10) sont valides
-    if (heureDebut && heureFin && heureFin === heureDebut) {
-      showToast('L\'heure de fin ne peut pas être identique à l\'heure de début.', 'error');
-      return;
-    }
+
+    // Afficher le rappel heure début dans la zone de soumission
+    document.getElementById('rappelHeureDebut').textContent = heureDebut || '—';
+    document.getElementById('heureFin').value = '';
 
     const btn = document.getElementById('btnCommencer');
     btn.disabled = true;
@@ -601,7 +706,6 @@ function setupFormEntete() {
           type_vol: typeVol,
           immatriculation: immatriculation || null,
           heure_debut: heureDebut,
-          heure_fin: heureFin,
           agent_id: 'demo',
           statut: 'en_cours'
         });
@@ -619,9 +723,9 @@ function setupFormEntete() {
         type_vol: typeVol,
         immatriculation: immatriculation || null,
         heure_debut: heureDebut,
-        heure_fin: heureFin,
         agent_id: currentUser.id,
-        statut: 'en_cours'
+        statut: 'en_cours',
+        source: 'app'
       }).select().single();
 
       if (error) throw error;
@@ -794,6 +898,14 @@ function buildPointHTML(section, point, sIdx, pIdx) {
           </div>
           <div class="photo-preview" id="photoPreview_${sIdx}_${pIdx}"></div>
         </div>
+        <div class="nc-action-row">
+          <button type="button" class="btn-nc-confirm" id="btnNcConfirm_${sIdx}_${pIdx}" onclick="confirmerJustifNC(${sIdx},${pIdx})" style="display:none;">
+            <i class="fas fa-check-circle"></i> Confirmer la justification NC
+          </button>
+          <button type="button" class="btn-nc-cancel" onclick="annulerNC(${sIdx},${pIdx})">
+            <i class="fas fa-times-circle"></i> Annuler — Corriger en C
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -831,6 +943,7 @@ function onConformiteChange(e) {
   controles[key].zone = zone;
   controles[key].sous_zone = sousZone;
   controles[key].point = point;
+  if (conformite !== 'NC') controles[key].ncConfirmed = false;
 
   // Style du point
   pointEl.classList.remove('point-c', 'point-nc', 'point-na');
@@ -863,7 +976,7 @@ function onConformiteChange(e) {
     obsEl.dataset.bound = '1';
     obsEl.addEventListener('input', () => {
       controles[key].observation = obsEl.value;
-      if (obsEl.value.trim()) clearNcMissingHint(sIdx, pIdx);
+      updateNcConfirmBtn(sIdx, pIdx, key);
       scheduleAutosave(sIdx, pIdx, key);
     });
   }
@@ -874,7 +987,40 @@ function clearNcMissingHint(sIdx, pIdx) {
   if (!pointEl) return;
   pointEl.classList.remove('nc-missing-justif');
   pointEl.querySelector('.nc-required-hint')?.remove();
+  checkAndUnlockNext(parseInt(sIdx));
 }
+
+function updateNcConfirmBtn(sIdx, pIdx, key) {
+  const btn = document.getElementById(`btnNcConfirm_${sIdx}_${pIdx}`);
+  if (!btn) return;
+  const c = controles[key] || {};
+  const hasJustif = !!(c.observation?.trim()) || (c.photoCount > 0);
+  btn.style.display = (hasJustif && !c.ncConfirmed) ? 'flex' : 'none';
+}
+
+window.annulerNC = function(sIdx, pIdx) {
+  // Remettre à C et masquer les détails NC
+  const radioC = document.querySelector(`input[name="conformite_${sIdx}_${pIdx}"][value="C"]`);
+  if (radioC) {
+    radioC.checked = true;
+    radioC.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+};
+
+window.confirmerJustifNC = function(sIdx, pIdx) {
+  const ficheStructure = getFicheStructure(currentTypeVol);
+  const section = ficheStructure[parseInt(sIdx)];
+  if (section) {
+    const point = section.points[parseInt(pIdx)];
+    if (point) {
+      const key = getKey(section.zone, section.sous_zone, point);
+      if (controles[key]) controles[key].ncConfirmed = true;
+    }
+  }
+  clearNcMissingHint(sIdx, pIdx);
+  const btn = document.getElementById(`btnNcConfirm_${sIdx}_${pIdx}`);
+  if (btn) btn.style.display = 'none';
+};
 
 // ---- AUTOSAVE ----
 
@@ -1056,7 +1202,7 @@ async function handlePhotoUpload(event, sIdx, pIdx, key) {
       if (isDemoMode) {
         const localUrl = URL.createObjectURL(compressed);
         controles[key].photoCount = (controles[key].photoCount || 0) + 1;
-        clearNcMissingHint(sIdx, pIdx);
+        updateNcConfirmBtn(sIdx, pIdx, key);
         const img = document.createElement('img');
         img.src = localUrl;
         img.className = 'photo-thumb';
@@ -1088,7 +1234,7 @@ async function handlePhotoUpload(event, sIdx, pIdx, key) {
       });
 
       controles[key].photoCount = (controles[key].photoCount || 0) + 1;
-      clearNcMissingHint(sIdx, pIdx);
+      updateNcConfirmBtn(sIdx, pIdx, key);
       const img = document.createElement('img');
       img.src = publicUrl;
       img.className = 'photo-thumb';
@@ -1151,6 +1297,23 @@ function confirmSoumission() {
     return;
   }
 
+  // Vérifier que toutes les NC ont été confirmées
+  const ficheStructureCheck = getFicheStructure(currentTypeVol);
+  const ncNonConfirmes = [];
+  ficheStructureCheck.forEach((section, sIdx) => {
+    section.points.forEach((point, pIdx) => {
+      const key = getKey(section.zone, section.sous_zone, point);
+      const c = controles[key];
+      if (c?.conformite === 'NC' && !c.ncConfirmed) ncNonConfirmes.push({ sIdx, pIdx });
+    });
+  });
+  if (ncNonConfirmes.length > 0) {
+    showToast(`${ncNonConfirmes.length} point(s) NC nécessitent une justification confirmée avant de soumettre.`, 'error');
+    const first = ncNonConfirmes[0];
+    document.getElementById(`point_${first.sIdx}_${first.pIdx}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
   const totalMat = document.querySelectorAll('.mat-check').length;
   const checkedMat = document.querySelectorAll('.mat-check:checked').length;
   if (checkedMat < totalMat) {
@@ -1158,6 +1321,35 @@ function confirmSoumission() {
     document.getElementById('sectionMateriel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
+
+  const nbAgentsVal = parseInt(document.getElementById('nbAgents').value);
+  if (!nbAgentsVal || nbAgentsVal < 1) {
+    showToast('Veuillez indiquer le nombre d\'agents de nettoyage (minimum 1).', 'error');
+    document.getElementById('sectionMateriel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('nbAgents').focus();
+    return;
+  }
+  const nbAspVal = parseInt(document.getElementById('nbAspirateurs').value);
+  if (!nbAspVal || nbAspVal < 1) {
+    showToast('Veuillez indiquer le nombre d\'aspirateurs (minimum 1).', 'error');
+    document.getElementById('sectionMateriel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('nbAspirateurs').focus();
+    return;
+  }
+
+  const heureFin = document.getElementById('heureFin').value || null;
+  const heureDebutVal = document.getElementById('rappelHeureDebut').textContent;
+  if (!heureFin) {
+    showToast('Veuillez renseigner l\'heure de fin de nettoyage avant de soumettre.', 'error');
+    document.getElementById('heureFin').focus();
+    return;
+  }
+  if (heureFin === heureDebutVal) {
+    showToast('L\'heure de fin ne peut pas être identique à l\'heure de début.', 'error');
+    document.getElementById('heureFin').focus();
+    return;
+  }
+
   const taux = filled > 0 ? ((C / filled) * 100).toFixed(1) : '0.0';
 
   document.getElementById('modalResume').innerHTML = `
@@ -1206,8 +1398,9 @@ document.getElementById('btnConfirmerSoumission')?.addEventListener('click', asy
   try {
     await flushSaves();
     await autosaveMateriel();
+    const heureFin = document.getElementById('heureFin').value || null;
     const { error } = await supabase.from('vols')
-      .update({ statut: 'soumis' })
+      .update({ statut: 'soumis', heure_fin: heureFin })
       .eq('id', currentVolId);
     if (error) throw error;
     localStorage.removeItem(`offline_${currentVolId}`);
@@ -1584,7 +1777,7 @@ window.continueFiche = async function(volId) {
     controles = {};
     (controlesList || []).forEach(c => {
       const key = getKey(c.zone, c.sous_zone, c.point_controle);
-      controles[key] = { conformite: c.conformite, observation: c.observation, controle_id: c.id, zone: c.zone, sous_zone: c.sous_zone, point: c.point_controle };
+      controles[key] = { conformite: c.conformite, observation: c.observation, controle_id: c.id, zone: c.zone, sous_zone: c.sous_zone, point: c.point_controle, ncConfirmed: c.conformite === 'NC' && !!c.observation?.trim() };
     });
 
     showView('nouveau');
@@ -1600,6 +1793,7 @@ window.continueFiche = async function(volId) {
       c.classList.toggle('selected', c.dataset.value === vol.type_vol);
     });
     document.getElementById('heureDebut').value = vol.heure_debut || '';
+    document.getElementById('rappelHeureDebut').textContent = vol.heure_debut || '—';
     document.getElementById('heureFin').value = vol.heure_fin || '';
 
     afficherFiche(vol);
@@ -1627,6 +1821,7 @@ function restoreConformites() {
               if (ncDetails) ncDetails.style.display = 'block';
               const obsEl = document.getElementById(`obs_${sIdx}_${pIdx}`);
               if (obsEl && c.observation) obsEl.value = c.observation;
+              updateNcConfirmBtn(sIdx, pIdx, key);
             }
           }
         }
@@ -1647,17 +1842,17 @@ function checkAndUnlockNext(sIdx) {
   );
   if (!allDone) return;
 
-  // Chaque point NC doit avoir un commentaire OU au moins une photo
+  // Chaque point NC doit avoir une justification confirmée (bouton "Confirmer NC")
   const ncSansJustif = section.points
     .map((point, pIdx) => ({ point, pIdx, key: getKey(section.zone, section.sous_zone, point) }))
     .filter(({ key }) => {
       const c = controles[key];
-      return c?.conformite === 'NC' && !c.observation?.trim() && !(c.photoCount > 0);
+      return c?.conformite === 'NC' && !c.ncConfirmed;
     });
 
   if (ncSansJustif.length > 0) {
     showToast(
-      `${ncSansJustif.length} point(s) NC nécessitent un commentaire ou une photo avant de continuer.`,
+      `${ncSansJustif.length} point(s) NC : ajoutez un commentaire ou une photo puis cliquez "Confirmer la justification NC".`,
       'error'
     );
     ncSansJustif.forEach(({ pIdx }) => {
@@ -1667,7 +1862,7 @@ function checkAndUnlockNext(sIdx) {
       if (!pointEl.querySelector('.nc-required-hint')) {
         const hint = document.createElement('div');
         hint.className = 'nc-required-hint';
-        hint.innerHTML = '⚠ Ajoutez un commentaire ou une photo pour continuer.';
+        hint.innerHTML = '⚠ Ajoutez un commentaire ou une photo, puis cliquez <strong>Confirmer la justification NC</strong>.';
         pointEl.querySelector('.nc-details')?.appendChild(hint);
       }
     });
@@ -1740,7 +1935,7 @@ async function loadExistingControles() {
     const data = demoGetControles(currentVolId);
     data.forEach(c => {
       const key = getKey(c.zone, c.sous_zone, c.point_controle);
-      controles[key] = { conformite: c.conformite, observation: c.observation, controle_id: c.id, zone: c.zone, sous_zone: c.sous_zone, point: c.point_controle };
+      controles[key] = { conformite: c.conformite, observation: c.observation, controle_id: c.id, zone: c.zone, sous_zone: c.sous_zone, point: c.point_controle, ncConfirmed: c.conformite === 'NC' && !!c.observation?.trim() };
     });
     restoreConformites();
     return;

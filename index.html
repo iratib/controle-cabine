@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Contrôle Cabine – Connexion</title>
   <link rel="icon" type="image/png" href="images/logo.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#be1e2d" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Ctrl Cabine" />
+  <link rel="apple-touch-icon" href="/images/logo.png" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" />
   <style>
@@ -419,10 +426,21 @@
 
     let selectedLoginRole = 'agent';
 
+    const PREFILL_MATRICULE = { chef: 'CHEF-001', admin: 'ADMIN' };
+
     window.selectLoginRole = function(role) {
       selectedLoginRole = role;
       if (isDemoMode) {
         document.getElementById('pw-hint-val').textContent = PASSWORDS[role];
+      } else {
+        const matriculeInput = document.getElementById('login-matricule');
+        if (PREFILL_MATRICULE[role]) {
+          matriculeInput.value = PREFILL_MATRICULE[role];
+          document.getElementById('login-password').focus();
+        } else {
+          matriculeInput.value = '';
+          matriculeInput.focus();
+        }
       }
     };
 
@@ -522,6 +540,6 @@
       selectLoginRole('agent');
     })();
   </script>
-
+  <script src="/js/pwa.js"></script>
 </body>
 </html>

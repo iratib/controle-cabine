@@ -32,6 +32,8 @@ create table if not exists public.vols (
   statut text default 'en_cours'
     check (statut in ('en_cours','soumis','validé','rejeté')),
   motif_rejet text,
+  photos_archivees boolean default false,
+  source text default null,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -251,6 +253,10 @@ create policy "Upload photos contrôle"
 create policy "Lecture photos publique"
   on storage.objects for select
   using (bucket_id = 'photos-controle');
+
+create policy "Admin supprime photos storage"
+  on storage.objects for delete
+  using (bucket_id = 'photos-controle' and public.get_my_role() in ('admin', 'chef', 'superviseur'));
 
 -- ============================================================
 -- NOTES : CRÉATION DES COMPTES UTILISATEURS
