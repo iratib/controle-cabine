@@ -121,7 +121,7 @@ function getFicheStructure(typeVol) {
 let currentUser = null;
 let allAgents = [];
 let realtimeSub = null;
-let dashboardFilters = { period: 'all', typeVol: '', agentId: '', month: '', cieCode: '' };
+let dashboardFilters = { period: '30', typeVol: '', agentId: '', month: '', cieCode: '' };
 let allCompagnies = [];
 
 // ---- INIT ----
@@ -300,14 +300,15 @@ function initDashboardFilters() {
 
 function initAnalyseFilters() {
   const now = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonth = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
 
   ['mp', 'gp'].forEach(prefix => {
     const fromEl = document.getElementById(`${prefix}FilterFrom`);
     const toEl   = document.getElementById(`${prefix}FilterTo`);
     const type   = prefix.toUpperCase();
-    if (fromEl) { fromEl.value = '2026-02'; }
-    if (toEl)   { toEl.value   = currentMonth; }
+    if (fromEl) { fromEl.value = lastMonth; }
+    if (toEl)   { toEl.value   = lastMonth; }
     fromEl?.addEventListener('change', () => loadAnalyseType(type));
     toEl?.addEventListener('change',   () => loadAnalyseType(type));
     document.getElementById(`btnRefresh${type}`)?.addEventListener('click', () => loadAnalyseType(type));
@@ -338,6 +339,18 @@ async function loadDashboard() {
     }
   }
 
+  // Indicateurs de chargement
+  ['statTotalVols', 'statAujourd', 'statTaux', 'statNcTotal'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = ''; el.classList.add('loading'); }
+  });
+  const loadingHtml = '<div class="loading-state">Chargement…</div>';
+  ['chartVolsParAgent','chartConformiteZone','chartEvolution','chartDonutConformite',
+   'chartStatuts','chartTypeVol','chartCompagnies','topNcList','activiteRecente'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = loadingHtml;
+  });
+
   try {
     let vols = [], allControles = [], todayCount = 0;
 
@@ -352,6 +365,7 @@ async function loadDashboard() {
       todayCount = demoGetVols().filter(v => v.date_vol === today).length;
       const ids = new Set(vols.map(v => v.id));
       allControles = demoGetAllControles().filter(c => ids.has(c.vol_id));
+      document.getElementById('statTotalVols').textContent = vols.length;
     } else {
       // Construire les filtres communs
       const applyFilters = q => {
@@ -399,6 +413,9 @@ async function loadDashboard() {
     const NC = allControles.filter(c => c.conformite === 'NC').length;
     const taux = (C + NC) > 0 ? ((C / (C + NC)) * 100).toFixed(1) : '—';
 
+    ['statTotalVols', 'statAujourd', 'statTaux', 'statNcTotal'].forEach(id => {
+      document.getElementById(id)?.classList.remove('loading');
+    });
     document.getElementById('statAujourd').textContent = todayCount;
     document.getElementById('statTaux').textContent = taux !== '—' ? taux + '%' : '—';
     document.getElementById('statNcTotal').textContent = NC;
@@ -1204,6 +1221,11 @@ async function loadAgentsTable() {
         ${(isAdmin || currentUser?.role === 'chef') && a.role === 'agent'
           ? `<button class="btn btn-warning btn-xs" onclick="resetPasswordAgent('${a.id}','${a.nom.replace(/'/g, "\\'")}')"><i class="fas fa-key"></i> CABINE</button>`
           : ''}
+        ${isAdmin && ['agent','superviseur'].includes(a.role)
+          ? (a.role === 'agent'
+              ? `<button class="btn btn-outline btn-xs" onclick="changeRole('${a.id}','superviseur','${a.nom.replace(/'/g, "\\'")}')"><i class="fas fa-arrow-up"></i> Superviseur</button>`
+              : `<button class="btn btn-outline btn-xs" onclick="changeRole('${a.id}','agent','${a.nom.replace(/'/g, "\\'")}')"><i class="fas fa-arrow-down"></i> Agent</button>`)
+          : ''}
         ${isAdmin ? `<button class="btn btn-danger btn-xs" onclick="confirmDeleteUser('${a.id}','${a.nom.replace(/'/g, "\\'")}')">Supprimer</button>` : ''}
       </td>
     </tr>
@@ -1236,6 +1258,40 @@ window.resetPasswordAgent = async function(agentId, nom) {
     showToast(err.message || 'Erreur réinitialisation', 'error');
   }
 };
+
+let _changeRolePending = null;
+
+window.changeRole = function(agentId, newRole, nom) {
+  const label = newRole === 'superviseur' ? 'Superviseur' : 'Agent de contrôle';
+  const fromLabel = newRole === 'superviseur' ? 'Agent de contrôle' : 'Superviseur';
+  _changeRolePending = { agentId, newRole, nom };
+  document.getElementById('modalChangeRoleTitle').textContent = `Changer le rôle de ${nom} ?`;
+  document.getElementById('modalChangeRoleText').innerHTML =
+    `Le rôle de <strong>${nom}</strong> passera de <strong>${fromLabel}</strong> à <strong>${label}</strong>.<br>Cette action prend effet immédiatement.`;
+  document.getElementById('modalChangeRole').style.display = 'flex';
+};
+
+document.getElementById('btnAnnulerChangeRole')?.addEventListener('click', () => {
+  document.getElementById('modalChangeRole').style.display = 'none';
+  _changeRolePending = null;
+});
+
+document.getElementById('btnConfirmerChangeRole')?.addEventListener('click', async () => {
+  if (!_changeRolePending) return;
+  const { agentId, newRole, nom } = _changeRolePending;
+  const label = newRole === 'superviseur' ? 'Superviseur' : 'Agent de contrôle';
+  const btn = document.getElementById('btnConfirmerChangeRole');
+  btn.disabled = true;
+  btn.textContent = 'Enregistrement…';
+  const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', agentId);
+  btn.disabled = false;
+  btn.textContent = 'Confirmer';
+  document.getElementById('modalChangeRole').style.display = 'none';
+  _changeRolePending = null;
+  if (error) { showToast('Erreur lors du changement de rôle', 'error'); return; }
+  showToast(`${nom} est maintenant ${label}.`, 'success');
+  loadAgentsTable();
+});
 
 window.toggleAgent = async function(agentId, actif) {
   if (isDemoMode) {
@@ -1526,10 +1582,11 @@ async function loadAnalyseType(type) {
   // Lire le filtre De/À
   const fromSel  = document.getElementById(isMP ? 'mpFilterFrom' : 'gpFilterFrom');
   const toSel    = document.getElementById(isMP ? 'mpFilterTo'   : 'gpFilterTo');
-  const fromDate = fromSel?.value ? monthToRange(fromSel.value).first : '2026-02-01';
   const now      = new Date();
-  const toDate   = toSel?.value   ? monthToRange(toSel.value).last
-    : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}-${new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()}`;
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const defaultMonth = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2,'0')}`;
+  const fromDate = monthToRange(fromSel?.value || defaultMonth).first;
+  const toDate   = monthToRange(toSel?.value   || defaultMonth).last;
 
   try {
     let vols = [], controles = [];
@@ -1570,7 +1627,7 @@ async function loadAnalyseType(type) {
       while (true) {
         let q = supabase
           .from('vols')
-          .select('id, numero_vol, immatriculation, agent_id, date_vol')
+          .select('id, numero_vol, immatriculation, agent_id, date_vol, type_vol')
           .in('type_vol', typeVolValues)
           .gte('date_vol', fromDate)
           .lte('date_vol', toDate)
@@ -1599,7 +1656,6 @@ async function loadAnalyseType(type) {
     }
 
     // ---- KPI calcul ----
-    const inspections = controles.length;
     // Compter uniquement les codes présents dans la table compagnies
     const rawCieCodes = new Set(vols.map(v => v.numero_vol?.match(/^[A-Z]+/)?.[0]).filter(Boolean));
     const cieSet = new Set([...rawCieCodes].filter(code => validCieCodes.has(code)));
@@ -1609,6 +1665,7 @@ async function loadAnalyseType(type) {
     const ZONE_CANON = { 'Cabine ECO': 'Cabine', 'CRC': 'Cabine', 'Premium Economy': 'Cabine' };
     const canonicalZones = new Set(structs.map(s => ZONE_CANON[s.zone] || s.zone));
     const uniqueZones = [...new Set(structs.map(s => s.zone))];
+
 
     // Période
     let periodeLabel = 'aucun vol enregistré';
@@ -1624,8 +1681,8 @@ async function loadAnalyseType(type) {
     kpiGrid.innerHTML = `
       <div class="rapport-kpi-card">
         <div class="rapport-kpi-icon"><i class="fas fa-clipboard-check"></i></div>
-        <div class="rapport-kpi-value">${inspections.toLocaleString('fr-FR')}</div>
-        <div class="rapport-kpi-label">inspections réalisées</div>
+        <div class="rapport-kpi-value">${vols.length.toLocaleString('fr-FR')}</div>
+        <div class="rapport-kpi-label">vols contrôlés</div>
         <div class="rapport-kpi-sublabel">${periodeLabel}</div>
       </div>
       <div class="rapport-kpi-card">
@@ -2507,7 +2564,7 @@ document.getElementById('btnConfirmerAdminDeleteVol')?.addEventListener('click',
     document.getElementById('modalAdminDeleteVol').style.display = 'none';
     adminDeleteVolId = null;
     showToast('Vol supprimé.', 'success');
-    loadVols();
+    loadTousControles();
   } catch (err) {
     showToast('Erreur lors de la suppression.', 'error');
     console.error(err);

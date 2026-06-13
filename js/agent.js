@@ -1270,6 +1270,7 @@ const MC_PAGE_SIZE = 20;
 let mcCurrentPeriod = 'today';
 let mcCurrentPage = 0;
 let mcTotalCount = 0;
+let enCoursTotal = 0;
 
 function setupMesControlesTabs() {
   document.querySelectorAll('.mc-tab').forEach(tab => {
@@ -1343,6 +1344,7 @@ async function loadMesControles() {
   const pagination = document.getElementById('mesControlesPagination');
   if (!container) return;
   container.innerHTML = '<div class="loading-state">Chargement…</div>';
+  updateBadgeEnCours();
   if (pagination) pagination.style.display = 'none';
 
   if (isDemoMode) {
@@ -1378,12 +1380,23 @@ async function loadMesControles() {
 
     mcTotalCount = count || 0;
 
+    const enCoursBanner = (mcCurrentPeriod !== 'all' && enCoursTotal > 0)
+      ? `<div class="mc-encours-banner">
+           <i class="fas fa-clock"></i>
+           Vous avez <strong>${enCoursTotal}</strong> contrôle${enCoursTotal > 1 ? 's' : ''} en cours sur d'autres dates.
+           <button class="mc-encours-btn" id="btnVoirToutEnCours">Voir tout</button>
+         </div>`
+      : '';
+
     if (!vols || vols.length === 0) {
       const msgs = {
         today: 'Aucun contrôle aujourd\'hui.',
         recent: 'Aucun contrôle sur les 7 derniers jours.'
       };
-      container.innerHTML = `<div class="empty-state">${msgs[mcCurrentPeriod] || 'Aucun contrôle.'}</div>`;
+      container.innerHTML = enCoursBanner + `<div class="empty-state">${msgs[mcCurrentPeriod] || 'Aucun contrôle.'}</div>`;
+      document.getElementById('btnVoirToutEnCours')?.addEventListener('click', () => {
+        document.querySelector('.mc-tab[data-period="all"]')?.click();
+      });
       return;
     }
 
@@ -1392,7 +1405,10 @@ async function loadMesControles() {
       return buildVolCard(vol, nc);
     }).join('');
 
-    container.innerHTML = `<div class="mc-cards-grid">${cards}</div>`;
+    container.innerHTML = enCoursBanner + `<div class="mc-cards-grid">${cards}</div>`;
+    document.getElementById('btnVoirToutEnCours')?.addEventListener('click', () => {
+      document.querySelector('.mc-tab[data-period="all"]')?.click();
+    });
 
     // Pagination (uniquement pour "all" ou si résultats > page)
     if (mcTotalCount > MC_PAGE_SIZE) {
@@ -1776,9 +1792,11 @@ async function updateBadgeEnCours() {
     .eq('statut', 'en_cours');
 
   if (!error && data && data.length > 0) {
-    badge.textContent = data.length;
+    enCoursTotal = data.length;
+    badge.textContent = enCoursTotal;
     badge.style.display = 'inline-block';
   } else {
+    enCoursTotal = 0;
     badge.style.display = 'none';
   }
 }
