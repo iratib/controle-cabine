@@ -52,9 +52,15 @@ self.addEventListener('fetch', event => {
   // Navigations (HTML) → réseau en priorité, cache en fallback
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() =>
-        caches.match(event.request).then(r => r || caches.match('/index.html'))
-      )
+      fetch(event.request).catch(() => {
+        // Essayer avec .html si l'URL n'a pas d'extension (ex: /agent → /agent.html)
+        const withHtml = url.pathname.endsWith('.html')
+          ? null
+          : new Request(url.origin + url.pathname + '.html');
+        return (withHtml ? caches.match(withHtml) : Promise.resolve(null))
+          .then(r => r || caches.match(event.request))
+          .then(r => r || caches.match('/index.html'));
+      })
     );
     return;
   }

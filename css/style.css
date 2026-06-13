@@ -147,6 +147,26 @@ input, select, textarea { font-family: var(--font); }
   box-shadow: 0 0 0 3px rgba(227,24,55,.12);
 }
 
+#formGrid.locked {
+  opacity: 0.38;
+  pointer-events: none;
+  user-select: none;
+  position: relative;
+}
+#formGrid.locked::after {
+  content: 'Sélectionnez d\'abord le type de vol ↑';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .8rem;
+  color: var(--ram-red);
+  font-weight: 600;
+  letter-spacing: .02em;
+  pointer-events: none;
+}
+
 .type-vol-icon {
   font-size: 1.75rem;
   line-height: 1;

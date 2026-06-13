@@ -599,12 +599,19 @@ async function loadCompagniesSelect() {
 // ---- FORMULAIRE EN-TÊTE ----
 
 function setupFormEntete() {
+  // Verrouiller le reste du formulaire jusqu'à la sélection du type de vol
+  const formGrid = document.getElementById('formGrid');
+  if (formGrid) formGrid.classList.add('locked');
+
   // Sélection du type de vol via cartes
   document.querySelectorAll('.type-vol-card').forEach(card => {
     card.addEventListener('click', () => {
       document.querySelectorAll('.type-vol-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
       document.getElementById('typeVol').value = card.dataset.value;
+      // Déverrouiller et focus sur le premier champ
+      if (formGrid) formGrid.classList.remove('locked');
+      document.getElementById('dateVol').focus();
     });
   });
 
@@ -633,8 +640,7 @@ function setupFormEntete() {
     if (isAT()) {
       immatEl.value = 'CN-';
       immatEl.placeholder = 'CN-XXX';
-      immatEl.focus();
-      immatEl.setSelectionRange(3, 3);
+      document.getElementById('numeroVol').focus();
     } else {
       if (immatEl.value === 'CN-') immatEl.value = '';
       immatEl.placeholder = 'ex: CN-RGT';
@@ -1430,12 +1436,29 @@ function openSuccesModal(volId, typeVol) {
   btnPDF.onclick = () => downloadFichePDF(volId, typeVol);
 
   btnShare.onclick = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: 'Fiche de contrôle cabine', text: `Contrôle ${typeVol} – ${taux}% conformité` });
-      } catch {}
-    } else {
-      downloadFichePDF(volId, typeVol);
+    if (!navigator.share) { downloadFichePDF(volId, typeVol); return; }
+
+    showToast('Préparation du partage…', 'info');
+    const result = await downloadFichePDF(volId, typeVol, { returnBlob: true });
+    if (!result) return;
+
+    const { blob, filename, vol } = result;
+    const agentNom = vol?.profiles?.nom || '';
+    const dateStr = vol?.date_vol ? new Date(vol.date_vol).toLocaleDateString('fr-FR') : '';
+    const shareTitle = `Fiche ${vol?.numero_vol || ''} – ${dateStr}`;
+    const shareText = `Contrôle cabine ${vol?.numero_vol || ''} du ${dateStr}${agentNom ? ' – Agent : ' + agentNom : ''}\n${typeVol} – Conformité : ${taux}%`;
+
+    const file = new File([blob], filename, { type: 'application/pdf' });
+
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ title: shareTitle, text: shareText, files: [file] });
+      } else {
+        // Navigateur ne supporte pas le partage de fichiers → partage texte seul
+        await navigator.share({ title: shareTitle, text: shareText });
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') showToast('Partage annulé ou non supporté', 'error');
     }
   };
 
@@ -1792,6 +1815,9 @@ window.continueFiche = async function(volId) {
     document.querySelectorAll('.type-vol-card').forEach(c => {
       c.classList.toggle('selected', c.dataset.value === vol.type_vol);
     });
+    // Déverrouiller le formGrid car le type est déjà défini
+    const fg = document.getElementById('formGrid');
+    if (fg) fg.classList.remove('locked');
     document.getElementById('heureDebut').value = vol.heure_debut || '';
     document.getElementById('rappelHeureDebut').textContent = vol.heure_debut || '—';
     document.getElementById('heureFin').value = vol.heure_fin || '';
@@ -2108,8 +2134,8 @@ function loadLogoBase64() {
   });
 }
 
-async function downloadFichePDF(volId, typeVol) {
-  showToast('Génération du PDF…', 'info');
+async function downloadFichePDF(volId, typeVol, { returnBlob = false } = {}) {
+  if (!returnBlob) showToast('Génération du PDF…', 'info');
 
   try {
     if (volId === currentVolId) await flushSaves();
@@ -2514,11 +2540,17 @@ async function downloadFichePDF(volId, typeVol) {
     }
 
     const filename = `Fiche_${vol.numero_vol}_${vol.date_vol}.pdf`.replace(/\//g, '-');
+
+    if (returnBlob) {
+      return { blob: doc.output('blob'), filename, vol };
+    }
+
     doc.save(filename);
     showToast('PDF téléchargé ✓', 'success');
 
   } catch (err) {
     console.error(err);
-    showToast('Erreur lors de la génération PDF', 'error');
+    if (!returnBlob) showToast('Erreur lors de la génération PDF', 'error');
+    return null;
   }
 }
