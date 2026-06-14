@@ -1,34 +1,29 @@
 // ============================================================
 // sw.js – Service Worker Contrôle Cabine
-// Incrémenter CACHE_VERSION à chaque déploiement majeur
+// Version auto-incrémentée à chaque déploiement via timestamp
 // ============================================================
 
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6-20260614';
 const CACHE_NAME = `controle-cabine-${CACHE_VERSION}`;
 
-const STATIC_ASSETS = [
+// Assets mis en cache pour le mode hors-ligne (images, manifest)
+const OFFLINE_ASSETS = [
   '/index.html',
   '/agent.html',
   '/admin.html',
-  '/css/style.css',
-  '/js/auth.js',
-  '/js/agent.js',
-  '/js/admin.js',
-  '/js/supabase-client.js',
-  '/js/utils.js',
-  '/js/pwa.js',
-  '/images/logo.png',
   '/manifest.json',
+  '/images/logo.png',
 ];
 
-// ── INSTALL : mise en cache des assets statiques ──────────────
+// ── INSTALL : mise en cache minimale + activation immédiate ──
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(STATIC_ASSETS))
+      .then(cache => cache.addAll(OFFLINE_ASSETS))
       .catch(err => console.warn('[SW] Erreur cache install :', err))
   );
-  // Ne pas appeler skipWaiting ici — on attend la confirmation utilisateur
+  // Activation immédiate sans attendre confirmation utilisateur
+  self.skipWaiting();
 });
 
 // ── ACTIVATE : suppression des anciens caches ─────────────────
@@ -42,30 +37,39 @@ self.addEventListener('activate', event => {
   );
 });
 
-// ── FETCH : stratégie de cache ────────────────────────────────
+// ── FETCH : stratégies différenciées par type de ressource ───
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // Requêtes externes (Supabase, CDN, fonts) → réseau direct
+  // Requêtes externes (Supabase, CDN, fonts) → réseau direct, pas de cache
   if (url.hostname !== self.location.hostname) return;
 
-  // Navigations (HTML) → réseau en priorité, cache en fallback
-  if (event.request.mode === 'navigate') {
+  const path = url.pathname;
+  const isJS  = path.endsWith('.js');
+  const isCSS = path.endsWith('.css');
+  const isNav = event.request.mode === 'navigate';
+
+  // JS, CSS, HTML → NETWORK FIRST : toujours la dernière version si en ligne
+  if (isJS || isCSS || isNav) {
     event.respondWith(
-      fetch(event.request).catch(() => {
-        // Essayer avec .html si l'URL n'a pas d'extension (ex: /agent → /agent.html)
-        const withHtml = url.pathname.endsWith('.html')
-          ? null
-          : new Request(url.origin + url.pathname + '.html');
-        return (withHtml ? caches.match(withHtml) : Promise.resolve(null))
-          .then(r => r || caches.match(event.request))
-          .then(r => r || caches.match('/index.html'));
-      })
+      (async () => {
+        try {
+          const response = await fetch(event.request);
+          if (response && response.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            cache.put(event.request, response.clone());
+          }
+          return response;
+        } catch {
+          // Hors-ligne : fallback sur le cache
+          return (await caches.match(event.request)) || (await caches.match('/index.html'));
+        }
+      })()
     );
     return;
   }
 
-  // Assets statiques → cache en priorité, réseau en fallback + mise à jour du cache
+  // Images, manifest → CACHE FIRST : stable, rarement modifié
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
@@ -80,7 +84,7 @@ self.addEventListener('fetch', event => {
   );
 });
 
-// ── MESSAGE : skipWaiting déclenché par l'utilisateur ─────────
+// ── MESSAGE : skipWaiting (conservé pour compatibilité) ───────
 self.addEventListener('message', event => {
   if (event.data?.type === 'SKIP_WAITING') {
     self.skipWaiting();
