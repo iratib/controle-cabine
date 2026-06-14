@@ -3811,6 +3811,7 @@ async function buildArchivePDF(vols, controlesByVol, photosByVol, materielsParVo
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const W = 210, margin = 14;
+  const pdfSafe = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/→/g, 'au').replace(/[—–]/g, '-');
 
   const fileName = `Controles_${dateFrom}_au_${dateTo}.pdf`;
 
@@ -3835,7 +3836,7 @@ async function buildArchivePDF(vols, controlesByVol, photosByVol, materielsParVo
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(100, 116, 139);
-  doc.text('RAM HANDLING — CONTRÔLE CABINES AVIONS', W / 2, 60, { align: 'center' });
+  doc.text(pdfSafe('RAM HANDLING - CONTROLE CABINES AVIONS'), W / 2, 60, { align: 'center' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(26);
@@ -3852,12 +3853,12 @@ async function buildArchivePDF(vols, controlesByVol, photosByVol, materielsParVo
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(203, 213, 225);
-  doc.text(periodLabel, W / 2, 110, { align: 'center' });
+  doc.text(pdfSafe(periodLabel), W / 2, 110, { align: 'center' });
 
   doc.setFontSize(8);
   doc.setTextColor(100, 116, 139);
-  doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}`, W / 2, 130, { align: 'center' });
-  doc.text(`${vols.length} vols contrôlés`, W / 2, 138, { align: 'center' });
+  doc.text(pdfSafe(`Genere le ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}`), W / 2, 130, { align: 'center' });
+  doc.text(pdfSafe(`${vols.length} vols controles`), W / 2, 138, { align: 'center' });
 
   // Blocs stats couverture
   const totalCtrl = Object.values(controlesByVol).reduce((s, a) => s + a.length, 0);
@@ -3941,7 +3942,7 @@ async function buildArchivePDF(vols, controlesByVol, photosByVol, materielsParVo
     doc.text(vol.type_vol || '—', W - M - 2, M + 7, { align: 'right' });
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
-    doc.text('Fiche de Contrôle Cabine', W - M - 2, M + 13, { align: 'right' });
+    doc.text('Fiche de Controle Cabine', W - M - 2, M + 13, { align: 'right' });
 
     let y = M + headerH + 3;
 
@@ -4042,7 +4043,7 @@ async function buildArchivePDF(vols, controlesByVol, photosByVol, materielsParVo
         doc.setFont('helvetica', 'bold');
         let x = M;
         doc.text('Zone',              x + colZone / 2,  y + 3.8, { align: 'center' }); x += colZone;
-        doc.text('Point de contrôle', x + colPoint / 2, y + 3.8, { align: 'center' }); x += colPoint;
+        doc.text('Point de controle', x + colPoint / 2, y + 3.8, { align: 'center' }); x += colPoint;
         doc.text('Conforme',          x + colConf / 2,  y + 3.8, { align: 'center' }); x += colConf;
         doc.text('Non Conforme',      x + colNbr / 2,   y + 3.8, { align: 'center' }); x += colNbr;
         doc.text('Observations',      x + colObs / 2,   y + 3.8, { align: 'center' });
@@ -4108,7 +4109,7 @@ async function buildArchivePDF(vols, controlesByVol, photosByVol, materielsParVo
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(8);
         doc.setFont('helvetica', 'bold');
-        doc.text('Matériel utilisé', M + colW / 2, y + 4, { align: 'center' });
+        doc.text('Materiel utilise', M + colW / 2, y + 4, { align: 'center' });
         y += 7;
 
         const aspRow    = mats.find(m => m.categorie === 'Nombre aspirateurs');
@@ -4246,7 +4247,7 @@ async function buildArchivePDF(vols, controlesByVol, photosByVol, materielsParVo
         doc.setFont('helvetica', 'italic');
         doc.setFontSize(8);
         doc.setTextColor(150, 150, 150);
-        doc.text('Aucun point de contrôle enregistré pour ce vol.', M, y + 6);
+        doc.text('Aucun point de controle enregistre pour ce vol.', M, y + 6);
       } else {
         doc.autoTable({
           startY: y,
@@ -4297,7 +4298,7 @@ async function buildArchivePDF(vols, controlesByVol, photosByVol, materielsParVo
           doc.setFont('helvetica', 'italic');
           doc.setFontSize(7);
           doc.setTextColor(100, 116, 139);
-          doc.text(`+ ${volPhotos.length - maxP} photo(s) supplémentaire(s)`, M, y + pH + 4);
+          doc.text(`+ ${volPhotos.length - maxP} photo(s) supplementaire(s)`, M, y + pH + 4);
         }
       }
     }
@@ -4314,8 +4315,8 @@ async function buildArchivePDF(vols, controlesByVol, photosByVol, materielsParVo
     doc.setFontSize(7);
     doc.setTextColor(160, 160, 160);
     doc.setFont('helvetica', 'normal');
-    doc.text('RAM HANDLING – Contrôle Cabine', 10, 290);
-    doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, W - 10, 290, { align: 'right' });
+    doc.text('RAM HANDLING - Controle Cabine', 10, 290);
+    doc.text(pdfSafe(`Genere le ${new Date().toLocaleDateString('fr-FR')}`), W - 10, 290, { align: 'right' });
     doc.text(`Page ${p - 1}/${pageCount - 1}`, W / 2, 290, { align: 'center' });
   }
 
