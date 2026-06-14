@@ -1456,9 +1456,16 @@ function confirmSoumission() {
     return;
   }
   if (heureDebutVal && heureDebutVal !== '—' && heureFin < heureDebutVal) {
-    showToast(`L'heure de fin (${heureFin}) doit être après l'heure de début (${heureDebutVal}).`, 'error');
-    document.getElementById('heureFinH')?.focus();
-    return;
+    // Vérifier si c'est un vol nuit (passage minuit) ou une vraie erreur de saisie
+    const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const dureeCrossMinuit = (24 * 60 - toMin(heureDebutVal)) + toMin(heureFin);
+    if (dureeCrossMinuit > 12 * 60) {
+      // Durée absurde même en cross-minuit → vraie erreur
+      showToast(`L'heure de fin (${heureFin}) doit être après l'heure de début (${heureDebutVal}).`, 'error');
+      document.getElementById('heureFinH')?.focus();
+      return;
+    }
+    // Sinon : vol nuit passage minuit → OK
   }
 
   const taux = filled > 0 ? ((C / filled) * 100).toFixed(1) : '0.0';
