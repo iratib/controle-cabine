@@ -151,9 +151,23 @@
                   <label for="numeroVol">Numéro de vol *</label>
                   <input type="text" id="numeroVol" placeholder="ex: 7894" maxlength="4" required />
                 </div>
+                <div class="form-group" id="typeAvionGroup" style="display:none;">
+                  <label for="typeAvion">Type avion *</label>
+                  <select id="typeAvion">
+                    <option value="">— Sélectionner —</option>
+                    <option value="ATR">ATR</option>
+                    <option value="737">737</option>
+                    <option value="787">787</option>
+                    <option value="E190">E190</option>
+                    <option value="767">767</option>
+                  </select>
+                </div>
                 <div class="form-group">
                   <label for="immatriculation">Immatriculation avion</label>
                   <input type="text" id="immatriculation" placeholder="ex: CN-RGT" maxlength="6" />
+                  <select id="immatriculationSelect" style="display:none;margin-top:0;">
+                    <option value="">— Sélectionner —</option>
+                  </select>
                 </div>
                 <div class="form-group">
                   <label>Heure début nettoyage</label>

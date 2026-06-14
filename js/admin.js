@@ -194,6 +194,7 @@ function setupNavigation() {
       else if (view === 'sla-config')     loadSlaConfigView();
       else if (view === 'sla-conformite') loadSlaConformiteView();
       else if (view === 'compagnies') loadCompagniesView();
+      else if (view === 'immatriculations') loadImmatriculationsView();
       else if (view === 'archive') loadArchiveView();
     });
   });
@@ -211,6 +212,7 @@ function capitalize(str) {
     'sla-conformite': 'Slaconformite',
     'slaconformite':  'Slaconformite',
     'compagnies': 'Compagnies',
+    'immatriculations': 'Immatriculations',
     'archive': 'Archive'
   };
   return map[str] || str.charAt(0).toUpperCase() + str.slice(1);
@@ -3168,6 +3170,209 @@ async function loadDashboardSla() {
     });
   });
 }
+
+// ---- ARCHIVAGE ----
+
+// ---- IMMATRICULATIONS AT ----
+
+let immatCurrentType = 'ATR';
+const IMMAT_TYPES = ['ATR', '737', '787', 'E190', '767'];
+
+async function refreshImmatTabCounts() {
+  if (isDemoMode) return;
+  try {
+    const { data } = await supabase.from('immatriculations').select('type_avion');
+    if (!data) return;
+    const counts = Object.fromEntries(IMMAT_TYPES.map(t => [t, 0]));
+    data.forEach(r => { if (r.type_avion in counts) counts[r.type_avion]++; });
+    document.querySelectorAll('.immat-tab').forEach(btn => {
+      const type = btn.dataset.type;
+      const n = counts[type] || 0;
+      btn.textContent = n > 0 ? `${type} (${n})` : type;
+    });
+  } catch {}
+}
+
+function setupImmatInput() {
+  const inp = document.getElementById('immatValue');
+  if (!inp || inp._immatSetup) return;
+  inp._immatSetup = true;
+
+  const PREFIX = 'CN-';
+  const enforce = () => {
+    let v = inp.value.toUpperCase();
+    if (!v.startsWith(PREFIX)) v = PREFIX + v.replace(/^C?N?-?/i, '');
+    inp.value = v;
+  };
+  inp.addEventListener('input', enforce);
+  inp.addEventListener('keydown', (e) => {
+    const pos = inp.selectionStart;
+    const selEnd = inp.selectionEnd;
+    if ((e.key === 'Backspace' || e.key === 'Delete') && pos <= PREFIX.length && selEnd <= PREFIX.length) {
+      e.preventDefault();
+    }
+  });
+  inp.addEventListener('focus', () => {
+    const l = inp.value.length;
+    inp.setSelectionRange(l, l);
+  });
+}
+
+function loadImmatriculationsView() {
+  // Onglets
+  document.querySelectorAll('.immat-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.immat-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      immatCurrentType = btn.dataset.type;
+      document.getElementById('immatTypeAvion').value = immatCurrentType;
+      document.getElementById('immatTabLabel').textContent = immatCurrentType;
+      renderImmatList();
+    });
+  });
+
+  // Formulaire ajout
+  document.getElementById('formAddImmat')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await addImmatriculation();
+  });
+
+  setupImmatInput();
+  refreshImmatTabCounts();
+  renderImmatList();
+}
+
+async function renderImmatList() {
+  const content  = document.getElementById('immatListContent');
+  const countEl  = document.getElementById('immatCount');
+  content.innerHTML = '<div class="loading-state">Chargement…</div>';
+
+  let rows = [];
+  if (!isDemoMode) {
+    try {
+      const { data, error } = await supabase
+        .from('immatriculations')
+        .select('*')
+        .eq('type_avion', immatCurrentType)
+        .order('immatriculation');
+      if (error) {
+        content.innerHTML = `<div class="empty-state">Erreur : ${error.message}</div>`;
+        return;
+      }
+      rows = data || [];
+    } catch (err) {
+      content.innerHTML = `<div class="empty-state">Erreur réseau : ${err.message}</div>`;
+      return;
+    }
+  }
+
+  if (countEl) countEl.textContent = `${rows.length} immatriculation${rows.length !== 1 ? 's' : ''}`;
+  refreshImmatTabCounts();
+
+  if (!rows.length) {
+    content.innerHTML = '<div class="empty-state">Aucune immatriculation enregistrée pour ce type.</div>';
+    return;
+  }
+
+  content.innerHTML = `
+    <table class="data-table">
+      <thead><tr>
+        <th>Immatriculation</th>
+        <th style="text-align:center">Statut</th>
+        <th style="text-align:center">Actions</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>
+            <td><span class="cie-code-badge">${r.immatriculation}</span></td>
+            <td style="text-align:center">
+              <span class="badge ${r.actif ? 'badge-ok' : 'badge-off'}">${r.actif ? 'Actif' : 'Inactif'}</span>
+            </td>
+            <td style="text-align:center">
+              <button class="btn btn-outline btn-xs" onclick="toggleImmat('${r.id}', ${r.actif})">
+                <i class="fas fa-${r.actif ? 'ban' : 'check'}"></i> ${r.actif ? 'Désactiver' : 'Activer'}
+              </button>
+              <button class="btn btn-danger btn-xs" style="margin-left:.4rem" onclick="deleteImmat('${r.id}', '${r.immatriculation}')">
+                <i class="fas fa-trash"></i>
+              </button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function addImmatriculation() {
+  const val  = document.getElementById('immatValue').value.trim().toUpperCase();
+  const type = document.getElementById('immatTypeAvion').value;
+  const btn  = document.getElementById('btnAddImmat');
+
+  if (!type || val.length <= 3) {
+    showToast('Saisissez une immatriculation valide (ex: CN-RGT).', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+
+  if (!isDemoMode) {
+    // Vérification doublon avant insert
+    try {
+      const { data: existing } = await supabase
+        .from('immatriculations')
+        .select('id')
+        .eq('type_avion', type)
+        .eq('immatriculation', val)
+        .maybeSingle();
+      if (existing) {
+        showToast(`"${val}" est déjà enregistrée pour le type ${type}.`, 'error');
+        btn.disabled = false;
+        return;
+      }
+    } catch {}
+
+    const { error } = await supabase.from('immatriculations').insert({
+      type_avion: type,
+      immatriculation: val,
+      actif: true
+    });
+    if (error) {
+      showToast(
+        error.message.includes('unique')
+          ? `"${val}" est déjà enregistrée pour le type ${type}.`
+          : error.message,
+        'error'
+      );
+      btn.disabled = false;
+      return;
+    }
+  }
+
+  document.getElementById('immatValue').value = 'CN-';
+  btn.disabled = false;
+  showToast(`Immatriculation "${val}" ajoutée (${type}).`, 'success');
+  renderImmatList();
+}
+
+async function toggleImmat(id, currentActif) {
+  if (!isDemoMode) {
+    const { error } = await supabase.from('immatriculations').update({ actif: !currentActif }).eq('id', id);
+    if (error) { showToast(error.message, 'error'); return; }
+  }
+  renderImmatList();
+}
+
+async function deleteImmat(id, immat) {
+  if (!confirm(`Supprimer l'immatriculation "${immat}" ?`)) return;
+  if (!isDemoMode) {
+    const { error } = await supabase.from('immatriculations').delete().eq('id', id);
+    if (error) { showToast(error.message, 'error'); return; }
+  }
+  showToast(`Immatriculation "${immat}" supprimée.`, 'success');
+  renderImmatList();
+}
+
+// Exposées globalement pour les onclick inline dans le HTML généré dynamiquement
+window.toggleImmat = toggleImmat;
+window.deleteImmat = deleteImmat;
 
 // ---- ARCHIVAGE ----
 

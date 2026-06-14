@@ -3,7 +3,7 @@
 // Incrémenter CACHE_VERSION à chaque déploiement majeur
 // ============================================================
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const CACHE_NAME = `controle-cabine-${CACHE_VERSION}`;
 
 const STATIC_ASSETS = [

@@ -117,6 +117,10 @@
           <span class="sidebar-icon"><i class="fas fa-building"></i></span>
           <span>Compagnies</span>
         </a>
+        <a href="#" class="sidebar-link" data-view="immatriculations">
+          <span class="sidebar-icon"><i class="fas fa-id-badge"></i></span>
+          <span>Immatriculations AT</span>
+        </a>
         <a href="#" class="sidebar-link" data-view="archive">
           <span class="sidebar-icon"><i class="fas fa-box-archive"></i></span>
           <span>Archivage</span>
@@ -869,6 +873,54 @@
               </div>
               <button class="btn btn-outline btn-lg" id="btnPrintFiche">🖨 Imprimer fiche</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======== IMMATRICULATIONS AT ======== -->
+      <div id="viewImmatriculations" class="view" style="display:none;">
+        <div class="page-title">
+          <h2><i class="fas fa-id-badge"></i> Immatriculations Royal Air Maroc (AT)</h2>
+        </div>
+
+        <!-- Onglets type avion -->
+        <div class="immat-tabs" id="immatTabs">
+          <button class="immat-tab active" data-type="ATR">ATR</button>
+          <button class="immat-tab" data-type="737">737</button>
+          <button class="immat-tab" data-type="787">787</button>
+          <button class="immat-tab" data-type="E190">E190</button>
+          <button class="immat-tab" data-type="767">767</button>
+        </div>
+
+        <!-- Formulaire ajout -->
+        <div class="card cie-add-card" style="margin-top:1rem;">
+          <div class="card-header">
+            <h3>Ajouter une immatriculation — <span id="immatTabLabel">ATR</span></h3>
+          </div>
+          <div class="card-body">
+            <form id="formAddImmat" class="cie-add-form">
+              <input type="hidden" id="immatTypeAvion" value="ATR" />
+              <div class="form-group">
+                <label>Immatriculation *</label>
+                <input type="text" id="immatValue" value="CN-" maxlength="9"
+                       autocomplete="off" spellcheck="false" required />
+                <span class="cie-hint">Format : CN-XXX (ex: CN-RGT)</span>
+              </div>
+              <button type="submit" class="btn btn-primary" id="btnAddImmat">
+                <i class="fas fa-plus"></i> Ajouter
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Liste -->
+        <div class="card" style="margin-top:1.25rem;">
+          <div class="card-header">
+            <h3>Immatriculations enregistrées</h3>
+            <span class="cie-count" id="immatCount">—</span>
+          </div>
+          <div class="card-body" id="immatListContent">
+            <div class="loading-state">Chargement…</div>
           </div>
         </div>
       </div>

@@ -684,51 +684,80 @@ function setupFormEntete() {
     });
   });
 
-  // Immatriculation : préfixe CN- verrouillé quand code cie = AT
+  // Immatriculation : comportement différencié selon code cie
   const codeCompagnieEl = document.getElementById('codeCompagnie');
-  const immatEl = document.getElementById('immatriculation');
+  const immatEl         = document.getElementById('immatriculation');
+  const immatSelEl      = document.getElementById('immatriculationSelect');
+  const typeAvionGroup  = document.getElementById('typeAvionGroup');
+  const typeAvionEl     = document.getElementById('typeAvion');
 
   function isAT() {
     return codeCompagnieEl.value.trim().toUpperCase() === 'AT';
   }
 
+  function showATMode() {
+    typeAvionGroup.style.display = '';
+    immatEl.style.display        = 'none';
+    immatSelEl.style.display     = '';
+    immatSelEl.innerHTML = '<option value="">— Choisir un type avion d\'abord —</option>';
+    typeAvionEl.value = '';
+  }
+
+  function hideATMode() {
+    typeAvionGroup.style.display = 'none';
+    typeAvionEl.value            = '';
+    immatEl.style.display        = '';
+    immatSelEl.style.display     = 'none';
+    if (immatEl.value === 'CN-') immatEl.value = '';
+    immatEl.placeholder = 'ex: CN-RGT';
+  }
+
   codeCompagnieEl.addEventListener('change', function () {
     if (isAT()) {
-      immatEl.value = 'CN-';
-      immatEl.placeholder = 'CN-XXX';
+      showATMode();
       document.getElementById('numeroVol').focus();
     } else {
-      if (immatEl.value === 'CN-') immatEl.value = '';
-      immatEl.placeholder = 'ex: CN-RGT';
+      hideATMode();
     }
   });
 
-  // Bloquer suppression du préfixe CN-
-  immatEl.addEventListener('keydown', function (e) {
-    if (!isAT()) return;
-    const sel = this.selectionStart;
-    if (e.key === 'Backspace' && sel <= 3) e.preventDefault();
-    if (e.key === 'Delete' && sel < 3) e.preventDefault();
+  // Chargement des immatriculations selon le type avion sélectionné
+  typeAvionEl.addEventListener('change', async function () {
+    const type = this.value;
+    if (!type) {
+      immatSelEl.innerHTML = '<option value="">— Choisir un type avion d\'abord —</option>';
+      return;
+    }
+    immatSelEl.innerHTML = '<option value="">Chargement…</option>';
+    let items = [];
+    if (!isDemoMode) {
+      const { data } = await supabase.from('immatriculations')
+        .select('immatriculation')
+        .eq('type_avion', type)
+        .eq('actif', true)
+        .order('immatriculation');
+      items = data || [];
+    }
+    if (!items.length) {
+      immatSelEl.innerHTML = '<option value="">Aucune immatriculation configurée</option>';
+    } else {
+      immatSelEl.innerHTML = '<option value="">— Sélectionner —</option>';
+      items.forEach(r => {
+        const o = document.createElement('option');
+        o.value = r.immatriculation;
+        o.textContent = r.immatriculation;
+        immatSelEl.appendChild(o);
+      });
+    }
   });
 
+  // Formatage immatriculation libre (non-AT)
   immatEl.addEventListener('input', function () {
-    if (isAT()) {
-      let raw = this.value.toUpperCase();
-      if (!raw.startsWith('CN-')) {
-        const suffix = raw.replace(/^C?N?-?/, '').replace(/[^A-Z]/g, '').substring(0, 3);
-        raw = 'CN-' + suffix;
-      } else {
-        const suffix = raw.substring(3).replace(/[^A-Z]/g, '').substring(0, 3);
-        raw = 'CN-' + suffix;
-      }
-      this.value = raw;
+    const letters = this.value.toUpperCase().replace(/[^A-Z]/g, '');
+    if (letters.length <= 2) {
+      this.value = letters;
     } else {
-      const letters = this.value.toUpperCase().replace(/[^A-Z]/g, '');
-      if (letters.length <= 2) {
-        this.value = letters;
-      } else {
-        this.value = letters.substring(0, 2) + '-' + letters.substring(2, 5);
-      }
+      this.value = letters.substring(0, 2) + '-' + letters.substring(2, 5);
     }
   });
 
@@ -738,10 +767,15 @@ function setupFormEntete() {
     const codeCompagnie = document.getElementById('codeCompagnie').value.trim().toUpperCase();
     const numeroVolRaw = document.getElementById('numeroVol').value.trim().toUpperCase();
     const numeroVol = codeCompagnie + numeroVolRaw;
-    const immatRaw = document.getElementById('immatriculation').value.trim();
-    const immatriculation = immatRaw === 'CN-' ? '' : immatRaw;
     const typeVol = document.getElementById('typeVol').value;
     const heureDebut = getTimePicker('heureDebut');
+
+    // Lecture immatriculation et type_avion selon mode AT ou non
+    const modeAT = codeCompagnie === 'AT';
+    const typeAvionVal = modeAT ? (document.getElementById('typeAvion').value || null) : null;
+    const immatriculation = modeAT
+      ? (document.getElementById('immatriculationSelect').value.trim() || null)
+      : (document.getElementById('immatriculation').value.trim() || null);
 
     if (!typeVol) {
       showToast('Veuillez sélectionner le type de vol.', 'error');
@@ -749,6 +783,14 @@ function setupFormEntete() {
     }
     if (!dateVol || !codeCompagnie || !numeroVolRaw) {
       showToast('Veuillez remplir les champs obligatoires (date, code cie, numéro de vol).', 'error');
+      return;
+    }
+    if (modeAT && !typeAvionVal) {
+      showToast('Veuillez sélectionner le type avion.', 'error');
+      return;
+    }
+    if (modeAT && !immatriculation) {
+      showToast('Veuillez sélectionner l\'immatriculation.', 'error');
       return;
     }
 
@@ -766,6 +808,7 @@ function setupFormEntete() {
           numero_vol: numeroVol,
           date_vol: dateVol,
           type_vol: typeVol,
+          type_avion: typeAvionVal,
           immatriculation: immatriculation || null,
           heure_debut: heureDebut,
           agent_id: 'demo',
@@ -783,6 +826,7 @@ function setupFormEntete() {
         numero_vol: numeroVol,
         date_vol: dateVol,
         type_vol: typeVol,
+        type_avion: typeAvionVal,
         immatriculation: immatriculation || null,
         heure_debut: heureDebut,
         agent_id: currentUser.id,

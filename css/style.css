@@ -2767,6 +2767,36 @@ input, select, textarea { font-family: var(--font); }
 .badge-ok  { background: rgba(16,185,129,.15); color: #10b981; padding: .2rem .6rem; border-radius: 20px; font-size: .75rem; font-weight: 600; }
 .badge-off { background: rgba(148,163,184,.15); color: #94a3b8; padding: .2rem .6rem; border-radius: 20px; font-size: .75rem; font-weight: 600; }
 
+/* ---- IMMATRICULATIONS TABS ---- */
+
+.immat-tabs {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .25rem;
+}
+.immat-tab {
+  padding: .45rem 1.1rem;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-family: var(--font-title);
+  font-weight: 600;
+  font-size: .875rem;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.immat-tab:hover {
+  border-color: var(--ram-red);
+  color: var(--ram-red);
+}
+.immat-tab.active {
+  background: var(--ram-red);
+  border-color: var(--ram-red);
+  color: #fff;
+}
+
 /* ---- SLA & NETTOYAGE ---- */
 
 .sla-section-title {
