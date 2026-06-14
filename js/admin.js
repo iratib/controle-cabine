@@ -3555,15 +3555,24 @@ window.previewArchiveMonth = async function() {
   body.innerHTML = '<div class="loading-state">Analyse en cours…</div>';
 
   try {
-    const { data: vols, error: volsErr } = await supabase
-      .from('vols')
-      .select('id, numero_vol, date_vol, type_vol, statut, agent_id, immatriculation, heure_debut, heure_fin, photos_archivees, source')
-      .gte('date_vol', first)
-      .lte('date_vol', last)
-      .order('date_vol')
-      .limit(500);
+    // Récupérer TOUS les vols de la période (pagination par 1000)
+    let vols = [];
+    let offset = 0;
+    const PAGE = 1000;
+    while (true) {
+      const { data: page, error: volsErr } = await supabase
+        .from('vols')
+        .select('id, numero_vol, date_vol, type_vol, statut, agent_id, immatriculation, heure_debut, heure_fin, photos_archivees, source')
+        .gte('date_vol', first)
+        .lte('date_vol', last)
+        .order('date_vol')
+        .range(offset, offset + PAGE - 1);
+      if (volsErr) throw volsErr;
+      if (page?.length) vols = vols.concat(page);
+      if (!page || page.length < PAGE) break;
+      offset += PAGE;
+    }
 
-    if (volsErr) throw volsErr;
     if (!vols?.length) {
       body.innerHTML = '<p class="text-muted" style="text-align:center;padding:1rem;">Aucun vol sur cette période.</p>';
       return;
