@@ -1455,6 +1455,11 @@ function confirmSoumission() {
     document.getElementById('heureFinH')?.focus();
     return;
   }
+  if (heureDebutVal && heureDebutVal !== '—' && heureFin < heureDebutVal) {
+    showToast(`L'heure de fin (${heureFin}) doit être après l'heure de début (${heureDebutVal}).`, 'error');
+    document.getElementById('heureFinH')?.focus();
+    return;
+  }
 
   const taux = filled > 0 ? ((C / filled) * 100).toFixed(1) : '0.0';
 
