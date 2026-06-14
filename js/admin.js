@@ -12,6 +12,31 @@ import {
 
 const MONTH_NAMES_FULL = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
+// Registre des instances Chart.js — pour destroy avant re-rendu
+const _charts = {};
+function _destroyChart(id) {
+  if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
+}
+function _makeCanvas(container, minHeight = 220) {
+  _destroyChart(container.id);
+  container.innerHTML = '';
+  container.style.position = 'relative';
+  // Wrap flex:1 pour remplir toute la hauteur de la card-body
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `position:relative;width:100%;flex:1;min-height:${minHeight}px`;
+  const canvas = document.createElement('canvas');
+  wrap.appendChild(canvas);
+  container.appendChild(wrap);
+  return canvas;
+}
+const _CHART_DEFAULTS = {
+  font: { family: "'Inter', system-ui, sans-serif", size: 11 },
+  color: '#6b7a99',
+};
+Chart.defaults.font.family = _CHART_DEFAULTS.font.family;
+Chart.defaults.font.size   = _CHART_DEFAULTS.font.size;
+Chart.defaults.color       = _CHART_DEFAULTS.color;
+
 function getMonthsList() {
   const months = [];
   const start = new Date(2026, 1, 1);
@@ -348,9 +373,13 @@ async function loadDashboard() {
     const el = document.getElementById(id);
     if (el) { el.textContent = ''; el.classList.add('loading'); }
   });
+  // Détruire les instances Chart.js avant rechargement
+  ['chartVolsParAgent','chartConformiteZone','chartEvolution','chartDonutConformite',
+   'chartControlesType','chartTypeVol','chartCompagnies'].forEach(id => _destroyChart(id));
+
   const loadingHtml = '<div class="loading-state">Chargement…</div>';
   ['chartVolsParAgent','chartConformiteZone','chartEvolution','chartDonutConformite',
-   'chartStatuts','chartTypeVol','chartCompagnies','topNcList','activiteRecente'].forEach(id => {
+   'chartControlesType','chartTypeVol','chartCompagnies','topNcList','activiteRecente'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = loadingHtml;
   });
@@ -425,10 +454,10 @@ async function loadDashboard() {
     document.getElementById('statNcTotal').textContent = NC;
 
     renderChartVolsParAgent(vols);
-    renderChartZones(allControles);
+    renderChartZones(allControles, vols);
     renderChartEvolution(period, fromDate, toDate, month, vols, allControles);
     renderChartDonutConformite(C, NC);
-    renderChartStatuts(vols);
+    renderChartControlesType(vols, allControles);
     renderChartTypeVol(vols, allControles);
     renderChartCompagnies(vols);
     renderTopNC(allControles);
@@ -448,47 +477,120 @@ function renderChartVolsParAgent(vols) {
   });
   const entries = Object.entries(agentCounts).sort((a, b) => b[1] - a[1]);
   if (!entries.length) { container.innerHTML = '<div class="empty-state">Aucune donnée</div>'; return; }
-  const max = Math.max(...entries.map(([, c]) => c), 1);
-  let html = '<div class="bar-chart-h">';
-  entries.forEach(([nom, count]) => {
-    const pct = Math.round((count / max) * 100);
-    html += `<div class="bar-h-row">
-      <div class="bar-h-label">${nom}</div>
-      <div class="bar-h-track"><div class="bar-h-fill" style="width:${pct}%"></div></div>
-      <div class="bar-h-value">${count}</div>
-    </div>`;
+  const canvas = _makeCanvas(container, Math.max(160, entries.length * 42));
+  _charts[container.id] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: entries.map(([nom]) => nom),
+      datasets: [{
+        data: entries.map(([, c]) => c),
+        backgroundColor: 'rgba(190,30,45,.8)',
+        hoverBackgroundColor: 'rgba(190,30,45,1)',
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.parsed.x} vol${ctx.parsed.x > 1 ? 's' : ''}`
+          }
+        }
+      },
+      scales: {
+        x: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: 'rgba(0,0,0,.05)' } },
+        y: { grid: { display: false } }
+      }
+    }
   });
-  html += '</div>';
-  container.innerHTML = html;
 }
 
-function renderChartZones(controles) {
+let _zoneChartVols = [];
+let _zoneChartControles = [];
+
+function renderChartZones(controles, vols, typeFilter) {
+  // Mémoriser les données pour le re-rendu au clic des pills
+  if (vols      !== undefined) _zoneChartVols     = vols;
+  if (controles !== undefined) _zoneChartControles = controles;
+
+  const filter = typeFilter !== undefined ? typeFilter
+    : (document.querySelector('#zoneTypeFilter .db-pill.active')?.dataset.zoneType ?? '');
+
+  // Filtrer les contrôles selon le type MP / GP
+  let filteredControles = _zoneChartControles;
+  if (filter === 'MP' || filter === 'GP') {
+    const keyword = filter === 'MP' ? 'Moyen' : 'Gros';
+    const volIds = new Set(_zoneChartVols.filter(v => v.type_vol?.includes(keyword)).map(v => v.id));
+    filteredControles = _zoneChartControles.filter(c => volIds.has(c.vol_id));
+  }
+
   const container = document.getElementById('chartConformiteZone');
   const zones = ['Cockpit', 'Cabine', 'Cabine ECO', 'Toilettes', 'Galley', 'Client', 'Premium Economy', 'CRC'];
   const zoneData = {};
   zones.forEach(z => { zoneData[z] = { C: 0, NC: 0 }; });
-  controles.forEach(c => {
+  filteredControles.forEach(c => {
     if (zoneData[c.zone]) {
       zoneData[c.zone][c.conformite] = (zoneData[c.zone][c.conformite] || 0) + 1;
     }
   });
 
-  let html = '<div class="bar-chart-h">';
-  zones.forEach(zone => {
+  const canvas = _makeCanvas(container, 280);
+  const tauxArr = zones.map(zone => {
     const d = zoneData[zone];
     const total = d.C + d.NC;
-    const taux = total > 0 ? Math.round((d.C / total) * 100) : 0;
-    const color = taux >= 80 ? '#10b981' : taux >= 50 ? '#f59e0b' : '#ef4444';
-    html += `
-      <div class="bar-h-row">
-        <div class="bar-h-label">${zone}</div>
-        <div class="bar-h-track"><div class="bar-h-fill" style="width:${taux}%;background:${color}"></div></div>
-        <div class="bar-h-value">${taux}%</div>
-      </div>
-    `;
+    return total > 0 ? Math.round((d.C / total) * 100) : null;
   });
-  html += '</div>';
-  container.innerHTML = html;
+  const bgColors = tauxArr.map(t => t === null ? 'rgba(0,0,0,.08)' : t >= 80 ? 'rgba(16,185,129,.8)' : t >= 50 ? 'rgba(245,158,11,.8)' : 'rgba(239,68,68,.8)');
+  const hoverColors = bgColors.map(c => c.replace(/[\d.]+\)$/, '1)'));
+
+  _charts[container.id] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: zones,
+      datasets: [{
+        data: tauxArr.map(t => t ?? 0),
+        backgroundColor: bgColors,
+        hoverBackgroundColor: hoverColors,
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const d = zoneData[zones[ctx.dataIndex]];
+              const total = d.C + d.NC;
+              return total > 0 ? ` ${ctx.parsed.x}%  (${d.C} C / ${d.NC} NC)` : ' Aucun contrôle';
+            }
+          }
+        }
+      },
+      scales: {
+        x: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+        y: { grid: { display: false } }
+      }
+    }
+  });
+
+  // Câbler les pills (onclick remplace à chaque appel)
+  document.querySelectorAll('#zoneTypeFilter .db-pill').forEach(p => {
+    p.onclick = () => {
+      document.querySelectorAll('#zoneTypeFilter .db-pill').forEach(x => x.classList.remove('active'));
+      p.classList.add('active');
+      renderChartZones(undefined, undefined, p.dataset.zoneType);
+    };
+  });
 }
 
 function renderChartEvolution(period, fromDate, toDate, month, vols, controles) {
@@ -554,17 +656,68 @@ function renderChartEvolution(period, fromDate, toDate, month, vols, controles) 
     partial: false
   }));
 
-  container.innerHTML = `
-    <div class="evol-db-wrap">
-      <div class="evol-db-legend">
-        <span><span class="evol-dot evol-dot-bar"></span> Inspections</span>
-        <span><span class="evol-dot evol-dot-line"></span> Taux conformité (%)</span>
-      </div>
-      <div class="evol-db-label">Inspections réalisées</div>
-      ${buildEvolBarSVG(data)}
-      <div class="evol-db-label" style="margin-top:1rem;">Taux de conformité (%)</div>
-      ${buildEvolLineSVG(data)}
-    </div>`;
+  const canvas = _makeCanvas(container, 260);
+  _charts[container.id] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.label),
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Inspections',
+          data: data.map(d => d.insp),
+          backgroundColor: 'rgba(190,30,45,.15)',
+          hoverBackgroundColor: 'rgba(190,30,45,.35)',
+          borderRadius: 4,
+          yAxisID: 'yInsp',
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: 'Taux conformité (%)',
+          data: data.map(d => d.taux),
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16,185,129,.1)',
+          borderWidth: 2.5,
+          pointBackgroundColor: '#10b981',
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          tension: 0.35,
+          fill: true,
+          yAxisID: 'yTaux',
+          order: 1,
+          spanGaps: true,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { usePointStyle: true, padding: 16, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.dataset.label === 'Inspections'
+              ? ` ${ctx.parsed.y} inspection${ctx.parsed.y > 1 ? 's' : ''}`
+              : ctx.parsed.y !== null ? ` ${ctx.parsed.y.toFixed(1)}% conformité` : ' —'
+          }
+        }
+      },
+      scales: {
+        yInsp: {
+          type: 'linear', position: 'left', beginAtZero: true, ticks: { stepSize: 1 },
+          grid: { color: 'rgba(0,0,0,.05)' }, title: { display: true, text: 'Inspections' }
+        },
+        yTaux: {
+          type: 'linear', position: 'right', min: 0, max: 100,
+          ticks: { callback: v => v + '%' }, grid: { display: false },
+          title: { display: true, text: 'Conformité' }
+        },
+        x: { grid: { display: false } }
+      }
+    }
+  });
 }
 
 function renderTopNC(controles) {
@@ -612,36 +765,106 @@ function renderChartDonutConformite(C, NC) {
   if (!container) return;
   const total = C + NC;
   if (!total) { container.innerHTML = '<div class="empty-state">Aucune donnée</div>'; return; }
-  const tauxC  = Math.round(C  / total * 100);
-  const tauxNC = Math.round(NC / total * 100);
-  container.innerHTML = `
-    <div class="donut-wrap">
-      <div class="donut-svg">${buildDonutSVG([{ count: C, color: '#10b981' }, { count: NC, color: '#ef4444' }])}</div>
-      <div class="donut-legend">
-        <div class="donut-legend-item"><span class="donut-dot" style="background:#10b981"></span>Conforme <strong>${C.toLocaleString('fr-FR')}</strong> <em>${tauxC}%</em></div>
-        <div class="donut-legend-item"><span class="donut-dot" style="background:#ef4444"></span>Non conforme <strong>${NC.toLocaleString('fr-FR')}</strong> <em>${tauxNC}%</em></div>
-      </div>
-    </div>`;
+  const canvas = _makeCanvas(container, 220);
+  _charts[container.id] = new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels: ['Conforme', 'Non conforme'],
+      datasets: [{
+        data: [C, NC],
+        backgroundColor: ['#10b981', '#ef4444'],
+        hoverBackgroundColor: ['#059669', '#dc2626'],
+        borderWidth: 0,
+        hoverOffset: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { usePointStyle: true, pointStyle: 'circle', padding: 14, font: { size: 12 } }
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const pct = (ctx.parsed / total * 100).toFixed(1);
+              return ` ${ctx.label} : ${ctx.parsed.toLocaleString('fr-FR')} pts (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
 }
 
-function renderChartStatuts(vols) {
-  const container = document.getElementById('chartStatuts');
+function renderChartControlesType(vols, controles) {
+  const container = document.getElementById('chartControlesType');
   if (!container) return;
   if (!vols.length) { container.innerHTML = '<div class="empty-state">Aucune donnée</div>'; return; }
-  const labels  = { en_cours: 'En cours', soumis: 'Soumis' };
-  const colors  = { en_cours: '#f59e0b', soumis: '#3b82f6' };
-  const counts  = { en_cours: 0, soumis: 0 };
-  vols.forEach(v => { if (v.statut in counts) counts[v.statut]++; });
-  const segments  = Object.entries(counts).map(([k, c]) => ({ count: c, color: colors[k] }));
-  const legendHtml = Object.entries(counts).map(([k, c]) => `
-    <div class="donut-legend-item">
-      <span class="donut-dot" style="background:${colors[k]}"></span>${labels[k]} <strong>${c}</strong>
-    </div>`).join('');
-  container.innerHTML = `
-    <div class="donut-wrap">
-      <div class="donut-svg">${buildDonutSVG(segments)}</div>
-      <div class="donut-legend">${legendHtml}</div>
-    </div>`;
+
+  const TYPES = [
+    { key: 'Moyen Porteur Transit',  label: 'MP Transit',  color: '#e57282' },
+    { key: 'Gros Porteur Transit',   label: 'GP Transit',  color: '#3b82f6' },
+    { key: 'Moyen Porteur Stop Cmn', label: 'MP Stop CMN', color: '#f59e0b' },
+    { key: 'Gros Porteur Stop Cmn',  label: 'GP Stop CMN', color: '#8b5cf6' },
+  ];
+
+  const volTypeMap = {};
+  vols.forEach(v => { volTypeMap[v.id] = v.type_vol; });
+
+  const data = {};
+  TYPES.forEach(t => { data[t.key] = { vols: 0, ctrl: 0, C: 0, NC: 0 }; });
+  vols.forEach(v => { if (data[v.type_vol]) data[v.type_vol].vols++; });
+  controles.forEach(c => {
+    const t = volTypeMap[c.vol_id];
+    if (!data[t]) return;
+    data[t].ctrl++;
+    if (c.conformite === 'C') data[t].C++;
+    else if (c.conformite === 'NC') data[t].NC++;
+  });
+
+  const canvas = _makeCanvas(container, 200);
+  _charts[container.id] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: TYPES.map(t => t.label),
+      datasets: [{
+        data: TYPES.map(t => {
+          const d = data[t.key];
+          return (d.C + d.NC) > 0 ? Math.round(d.C / (d.C + d.NC) * 100) : 0;
+        }),
+        backgroundColor: TYPES.map(t => t.color + 'cc'),
+        hoverBackgroundColor: TYPES.map(t => t.color),
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const t = TYPES[ctx.dataIndex];
+              const d = data[t.key];
+              const taux = (d.C + d.NC) > 0 ? ctx.parsed.x + '%' : '—';
+              return ` ${taux}  (${d.vols} vol${d.vols !== 1 ? 's' : ''} · ${d.ctrl} pts)`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+        y: { grid: { display: false } }
+      }
+    }
+  });
 }
 
 function renderChartTypeVol(vols, controles) {
@@ -656,18 +879,45 @@ function renderChartTypeVol(vols, controles) {
   const colorMap = { 'Moyen Porteur': '#e57282', 'Gros Porteur': '#3b82f6' };
   const hasData  = Object.values(data).some(d => d.vols > 0);
   if (!hasData) { container.innerHTML = '<div class="empty-state">Aucune donnée</div>'; return; }
-  let html = '<div class="bar-chart-h">';
-  Object.entries(data).forEach(([group, d]) => {
-    const total = d.C + d.NC;
-    const taux  = total > 0 ? Math.round(d.C / total * 100) : 0;
-    html += `<div class="bar-h-row">
-      <div class="bar-h-label">${group}<br><small>${d.vols} vol${d.vols > 1 ? 's' : ''}</small></div>
-      <div class="bar-h-track"><div class="bar-h-fill" style="width:${taux}%;background:${colorMap[group]}"></div></div>
-      <div class="bar-h-value">${taux}%</div>
-    </div>`;
+  const labels = Object.keys(data);
+  const canvas = _makeCanvas(container, 140);
+  _charts[container.id] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: labels.map(g => {
+          const d = data[g];
+          const total = d.C + d.NC;
+          return total > 0 ? Math.round(d.C / total * 100) : 0;
+        }),
+        backgroundColor: labels.map(g => colorMap[g] + 'cc'),
+        hoverBackgroundColor: labels.map(g => colorMap[g]),
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const d = data[labels[ctx.dataIndex]];
+              return ` ${ctx.parsed.x}%  (${d.vols} vol${d.vols !== 1 ? 's' : ''} · ${d.C} C / ${d.NC} NC)`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+        y: { grid: { display: false } }
+      }
+    }
   });
-  html += '</div>';
-  container.innerHTML = html;
 }
 
 function renderChartCompagnies(vols) {
@@ -681,18 +931,38 @@ function renderChartCompagnies(vols) {
   });
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   if (!entries.length) { container.innerHTML = '<div class="empty-state">Aucune donnée</div>'; return; }
-  const max = Math.max(...entries.map(([, c]) => c), 1);
-  let html = '<div class="bar-chart-h">';
-  entries.forEach(([cie, count]) => {
-    const pct = Math.round((count / max) * 100);
-    html += `<div class="bar-h-row">
-      <div class="bar-h-label">${cie}</div>
-      <div class="bar-h-track"><div class="bar-h-fill" style="width:${pct}%;background:#6366f1"></div></div>
-      <div class="bar-h-value">${count}</div>
-    </div>`;
+  const canvas = _makeCanvas(container, Math.max(140, entries.length * 38));
+  const palette = ['#6366f1','#3b82f6','#8b5cf6','#06b6d4','#f59e0b','#10b981','#e57282'];
+  _charts[container.id] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: entries.map(([cie]) => cie),
+      datasets: [{
+        data: entries.map(([, c]) => c),
+        backgroundColor: entries.map((_, i) => palette[i % palette.length] + 'cc'),
+        hoverBackgroundColor: entries.map((_, i) => palette[i % palette.length]),
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.parsed.x} vol${ctx.parsed.x > 1 ? 's' : ''}`
+          }
+        }
+      },
+      scales: {
+        x: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: 'rgba(0,0,0,.05)' } },
+        y: { grid: { display: false } }
+      }
+    }
   });
-  html += '</div>';
-  container.innerHTML = html;
 }
 
 async function loadActiviteRecente() {
@@ -2700,6 +2970,8 @@ async function loadSlaConfigView() {
   if (btnS) btnS.onclick = () => saveSlaConfig(SLA_CATEGORIES_STOP,    'sla_detail_stop',    'Stop');
 }
 
+const _slaCritere = { Transit: 'temps', Stop: 'temps' };
+
 function loadSlaConformiteView() {
   const anchor = _pendingSlaAnchor;
   _pendingSlaAnchor = null;
@@ -2713,8 +2985,24 @@ function loadSlaConformiteView() {
       });
     }
     const btn = document.getElementById(`btnSlaStatsRefresh${S}`);
-    if (btn) btn.onclick = () => loadSlaStats(type, S);
-    loadSlaStats(type, S);
+    if (btn) btn.onclick = () => loadSlaStats(type, S, _slaCritere[S]);
+
+    // Wiring pills critère (onclick remplace à chaque visite, pas d'accumulation)
+    const pillsBox = document.getElementById(`slaCritere${S}`);
+    if (pillsBox) {
+      // Synchroniser l'état visuel avec l'état interne
+      pillsBox.querySelectorAll('.db-pill').forEach(p => {
+        p.classList.toggle('active', p.dataset.critere === _slaCritere[S]);
+        p.onclick = () => {
+          pillsBox.querySelectorAll('.db-pill').forEach(x => x.classList.remove('active'));
+          p.classList.add('active');
+          _slaCritere[S] = p.dataset.critere;
+          loadSlaStats(type, S, _slaCritere[S]);
+        };
+      });
+    }
+
+    loadSlaStats(type, S, _slaCritere[S]);
   });
 
   if (anchor) {
@@ -2858,7 +3146,7 @@ function getSlaForBroadType(typeVolKey) {
   return Math.max(a, b);
 }
 
-async function loadSlaStats(typeFilter, suffix) {
+async function loadSlaStats(typeFilter, suffix, critere = 'temps') {
   const content = document.getElementById(`slaStatsContent${suffix}`);
   content.innerHTML = '<div class="loading-state">Chargement…</div>';
 
@@ -2870,10 +3158,10 @@ async function loadSlaStats(typeFilter, suffix) {
     vols = demoGetVols();
     if (range) vols = vols.filter(v => v.date_vol >= range.first && v.date_vol <= range.last);
   } else {
-    let q = supabase
-      .from('vols')
-      .select('id, numero_vol, immatriculation, type_vol, date_vol, heure_debut, heure_fin, profiles(nom)')
-      .order('date_vol');
+    const selectCols = critere === 'agents'
+      ? 'id, numero_vol, immatriculation, type_vol, date_vol, heure_debut, heure_fin, profiles(nom), materiels_utilises(categorie, quantite)'
+      : 'id, numero_vol, immatriculation, type_vol, date_vol, heure_debut, heure_fin, profiles(nom)';
+    let q = supabase.from('vols').select(selectCols).order('date_vol');
     if (range) q = q.gte('date_vol', range.first).lte('date_vol', range.last);
     const all = [];
     let off = 0;
@@ -2892,72 +3180,87 @@ async function loadSlaStats(typeFilter, suffix) {
     : (v.type_vol === 'Moyen Porteur Stop Cmn' || v.type_vol === 'Gros Porteur Stop Cmn')
   );
 
-  // Calcul conformité par type + collecte des vols hors SLA
+  // Calcul conformité par type
   const activeTypes = SLA_STATS_TYPES.filter(t => t.filterType === typeFilter);
   const stats = {};
   activeTypes.forEach(t => {
     stats[t.key] = {
-      key:     t.key,
-      label:   t.label,
-      sla:     getSlaForBroadType(t.key),
-      agents:  slaConfigCache[t.key]?.nb_agents_nettoyage ?? 0,
-      total: 0, avecDuree: 0, dansSla: 0, horsSla: 0,
+      key:         t.key,
+      label:       t.label,
+      sla:         getSlaForBroadType(t.key),
+      agentsReq:   slaConfigCache[t.key]?.nb_agents_nettoyage ?? 0,
+      total: 0, avecInfo: 0, dansSla: 0, horsSla: 0,
       volsHorsSla: [],
     };
   });
 
-  vols.forEach(v => {
-    const s = stats[v.type_vol];
-    if (!s) return;
-    s.total++;
-    if (!v.heure_debut || !v.heure_fin) return;
-    const [hd, md] = v.heure_debut.split(':').map(Number);
-    const [hf, mf] = v.heure_fin.split(':').map(Number);
-    let duree = (hf * 60 + mf) - (hd * 60 + md);
-    if (duree < 0) duree += 1440;
-    s.avecDuree++;
-    if (duree <= s.sla) {
-      s.dansSla++;
-    } else {
-      s.horsSla++;
-      s.volsHorsSla.push({ ...v, duree });
-    }
-  });
+  if (critere === 'temps') {
+    vols.forEach(v => {
+      const s = stats[v.type_vol];
+      if (!s) return;
+      s.total++;
+      if (!v.heure_debut || !v.heure_fin) return;
+      const [hd, md] = v.heure_debut.split(':').map(Number);
+      const [hf, mf] = v.heure_fin.split(':').map(Number);
+      let duree = (hf * 60 + mf) - (hd * 60 + md);
+      if (duree < 0) duree += 1440;
+      s.avecInfo++;
+      if (duree <= s.sla) { s.dansSla++; }
+      else { s.horsSla++; s.volsHorsSla.push({ ...v, duree }); }
+    });
+  } else {
+    // critere === 'agents'
+    vols.forEach(v => {
+      const s = stats[v.type_vol];
+      if (!s) return;
+      s.total++;
+      const matEntry = (v.materiels_utilises || []).find(m => m.categorie === 'Nombre agents');
+      if (matEntry === undefined) return; // pas de saisie
+      const nbReel = matEntry.quantite ?? 0;
+      s.avecInfo++;
+      if (nbReel >= s.agentsReq) { s.dansSla++; }
+      else { s.horsSla++; s.volsHorsSla.push({ ...v, nbReel }); }
+    });
+  }
 
   const periodeLabel = range
     ? `${MONTH_NAMES_FULL[parseInt(mois.split('-')[1]) - 1]} ${mois.split('-')[0]}`
     : 'toute la période';
 
   const totalHorsSla = Object.values(stats).reduce((acc, s) => acc + s.horsSla, 0);
+  const isTemps = critere === 'temps';
 
   // KPI cards
   const kpiHtml = Object.values(stats).map(s => {
-    const taux = s.avecDuree > 0 ? (s.dansSla / s.avecDuree * 100).toFixed(1) : null;
+    const taux = s.avecInfo > 0 ? (s.dansSla / s.avecInfo * 100).toFixed(1) : null;
     const color = taux === null ? '#94a3b8' : taux >= 90 ? '#22c55e' : taux >= 70 ? '#f59e0b' : '#ef4444';
+    const sub = isTemps ? `conformité temps (≤ ${s.sla} min)` : `effectif ≥ ${s.agentsReq} agents requis`;
     return `
       <div class="sla-kpi-card">
         <div class="sla-kpi-label">${s.label}</div>
         <div class="sla-kpi-value" style="color:${color}">${taux !== null ? taux + '%' : '—'}</div>
-        <div class="sla-kpi-sub">conformité SLA (≤ ${s.sla} min)</div>
-        <div class="sla-kpi-detail">${s.dansSla} / ${s.avecDuree} vols analysés</div>
+        <div class="sla-kpi-sub">${sub}</div>
+        <div class="sla-kpi-detail">${s.dansSla} / ${s.avecInfo} vols analysés</div>
       </div>`;
   }).join('');
 
   // Table récap
   const tableRows = Object.values(stats).map(s => {
-    const taux = s.avecDuree > 0 ? (s.dansSla / s.avecDuree * 100).toFixed(1) + '%' : '—';
-    const color = s.avecDuree === 0 ? '' : parseFloat(taux) >= 90 ? 'color:#22c55e' : parseFloat(taux) >= 70 ? 'color:#f59e0b' : 'color:#ef4444';
-    const sansInfo = s.total - s.avecDuree;
+    const taux = s.avecInfo > 0 ? (s.dansSla / s.avecInfo * 100).toFixed(1) + '%' : '—';
+    const color = s.avecInfo === 0 ? '' : parseFloat(taux) >= 90 ? 'color:#22c55e' : parseFloat(taux) >= 70 ? 'color:#f59e0b' : 'color:#ef4444';
+    const sansInfo = s.total - s.avecInfo;
     const btnHors = s.horsSla > 0
       ? `<button class="btn btn-outline btn-xs sla-voir-hors" data-type="${s.key}">
            <i class="fas fa-eye"></i> Voir (${s.horsSla})
          </button>`
       : `<span style="color:#94a3b8">—</span>`;
+    const critereCol = isTemps
+      ? `<td style="text-align:center">${s.sla} min</td>`
+      : `<td style="text-align:center">${s.agentsReq} agents</td>`;
     return `
       <tr>
         <td>${s.label}</td>
-        <td style="text-align:center">${s.sla} min</td>
-        <td style="text-align:center">${s.agents}</td>
+        ${critereCol}
         <td style="text-align:center">${s.total}</td>
         <td style="text-align:center;color:#22c55e">${s.dansSla}</td>
         <td style="text-align:center">${btnHors}</td>
@@ -2966,13 +3269,24 @@ async function loadSlaStats(typeFilter, suffix) {
       </tr>`;
   }).join('');
 
-  // Table vols hors SLA (tous types confondus, masquée par défaut)
+  const thCritere = isTemps
+    ? `<th style="text-align:center">SLA max</th>`
+    : `<th style="text-align:center">Agents requis</th>`;
+  const sansLabel = isTemps ? 'Sans horaire' : 'Sans saisie agents';
+
+  // Table vols hors SLA
   const allHorsRows = Object.values(stats)
-    .flatMap(s => s.volsHorsSla.map(v => ({ ...v, sla: s.sla, typeLabel: s.label })))
+    .flatMap(s => s.volsHorsSla.map(v => ({ ...v, sla: s.sla, agentsReq: s.agentsReq, typeLabel: s.label })))
     .sort((a, b) => a.date_vol.localeCompare(b.date_vol));
 
   const horsTableRows = allHorsRows.map(v => {
-    const ecart = v.duree - v.sla;
+    const detailCol = isTemps
+      ? `<td style="text-align:center;font-weight:600;color:#ef4444">${v.duree} min</td>
+         <td style="text-align:center">${v.sla} min</td>
+         <td style="text-align:center;color:#ef4444;font-weight:600">+${v.duree - v.sla} min</td>`
+      : `<td style="text-align:center;font-weight:600;color:#ef4444">${v.nbReel} agents</td>
+         <td style="text-align:center">${v.agentsReq} agents requis</td>
+         <td style="text-align:center;color:#ef4444;font-weight:600">-${v.agentsReq - v.nbReel}</td>`;
     return `
       <tr>
         <td>${formatDate(v.date_vol)}</td>
@@ -2980,12 +3294,14 @@ async function loadSlaStats(typeFilter, suffix) {
         <td>${v.immatriculation || '—'}</td>
         <td>${v.typeLabel}</td>
         <td>${v.profiles?.nom || '—'}</td>
-        <td style="text-align:center">${v.heure_debut?.slice(0,5)} → ${v.heure_fin?.slice(0,5)}</td>
-        <td style="text-align:center;font-weight:600;color:#ef4444">${v.duree} min</td>
-        <td style="text-align:center">${v.sla} min</td>
-        <td style="text-align:center;color:#ef4444;font-weight:600">+${ecart} min</td>
+        <td style="text-align:center">${v.heure_debut?.slice(0,5) ?? '—'} → ${v.heure_fin?.slice(0,5) ?? '—'}</td>
+        ${detailCol}
       </tr>`;
   }).join('');
+
+  const horsThCols = isTemps
+    ? `<th style="text-align:center">Durée réelle</th><th style="text-align:center">SLA max</th><th style="text-align:center">Dépassement</th>`
+    : `<th style="text-align:center">Agents réels</th><th style="text-align:center">Requis</th><th style="text-align:center">Manquant</th>`;
 
   content.innerHTML = `
     <div class="sla-kpi-grid">${kpiHtml}</div>
@@ -2995,19 +3311,18 @@ async function loadSlaStats(typeFilter, suffix) {
         <h3>Récapitulatif — ${periodeLabel}</h3>
         ${totalHorsSla > 0 ? `
         <button class="btn btn-danger btn-sm" id="btnToggleHorsSla_${suffix}">
-          <i class="fas fa-triangle-exclamation"></i> Vols hors SLA (${totalHorsSla})
+          <i class="fas fa-triangle-exclamation"></i> Vols non conformes (${totalHorsSla})
         </button>` : ''}
       </div>
       <div class="card-body" style="overflow-x:auto;">
         <table class="data-table">
           <thead><tr>
             <th>Type de vol</th>
-            <th style="text-align:center">SLA max</th>
-            <th style="text-align:center">Agents requis</th>
+            ${thCritere}
             <th style="text-align:center">Total vols</th>
-            <th style="text-align:center">Dans SLA</th>
-            <th style="text-align:center">Hors SLA</th>
-            <th style="text-align:center">Sans horaire</th>
+            <th style="text-align:center">Conformes</th>
+            <th style="text-align:center">Non conformes</th>
+            <th style="text-align:center">${sansLabel}</th>
             <th style="text-align:center">Conformité</th>
           </tr></thead>
           <tbody>${tableRows}</tbody>
@@ -3018,18 +3333,16 @@ async function loadSlaStats(typeFilter, suffix) {
     <div id="slaHorsList_${suffix}" style="display:none;margin-top:1rem;">
       <div class="card sla-hors-card">
         <div class="card-header" style="background:rgba(239,68,68,.08);border-bottom:1px solid rgba(239,68,68,.2);">
-          <h3 style="color:#ef4444"><i class="fas fa-triangle-exclamation"></i> Liste des vols hors SLA — ${periodeLabel}</h3>
+          <h3 style="color:#ef4444"><i class="fas fa-triangle-exclamation"></i> Vols non conformes — ${periodeLabel}</h3>
           <button class="btn btn-outline btn-sm" id="btnFermerHorsSla_${suffix}"><i class="fas fa-xmark"></i> Fermer</button>
         </div>
         <div class="card-body" style="overflow-x:auto;">
-          ${allHorsRows.length === 0 ? '<div class="empty-state">Aucun vol hors SLA</div>' : `
+          ${allHorsRows.length === 0 ? '<div class="empty-state">Aucun vol non conforme</div>' : `
           <table class="data-table">
             <thead><tr>
               <th>Date</th><th>N° vol</th><th>Immat.</th><th>Type</th><th>Agent contrôle</th>
               <th style="text-align:center">Horaires</th>
-              <th style="text-align:center">Durée réelle</th>
-              <th style="text-align:center">SLA max</th>
-              <th style="text-align:center">Dépassement</th>
+              ${horsThCols}
             </tr></thead>
             <tbody>${horsTableRows}</tbody>
           </table>`}
@@ -3037,7 +3350,11 @@ async function loadSlaStats(typeFilter, suffix) {
       </div>
     </div>
 
-    <p class="sla-note"><i class="fas fa-circle-info"></i> <em>Sans horaire</em> = vols sans heure de début ou de fin enregistrée par l'agent de contrôle.</p>`;
+    <p class="sla-note"><i class="fas fa-circle-info"></i>
+      ${isTemps
+        ? '<em>Sans horaire</em> = vols sans heure de début ou de fin enregistrée.'
+        : '<em>Sans saisie agents</em> = vols où l\'agent n\'a pas renseigné le nombre d\'agents de nettoyage.'
+      }</p>`;
 
   document.getElementById(`btnToggleHorsSla_${suffix}`)?.addEventListener('click', () => {
     const panel = document.getElementById(`slaHorsList_${suffix}`);
@@ -3059,7 +3376,13 @@ async function loadSlaStats(typeFilter, suffix) {
       const filteredRows = s.volsHorsSla
         .sort((a, b) => a.date_vol.localeCompare(b.date_vol))
         .map(v => {
-          const ecart = v.duree - s.sla;
+          const detailCol = isTemps
+            ? `<td style="text-align:center;font-weight:600;color:#ef4444">${v.duree} min</td>
+               <td style="text-align:center">${s.sla} min</td>
+               <td style="text-align:center;color:#ef4444;font-weight:600">+${v.duree - s.sla} min</td>`
+            : `<td style="text-align:center;font-weight:600;color:#ef4444">${v.nbReel} agents</td>
+               <td style="text-align:center">${s.agentsReq} agents requis</td>
+               <td style="text-align:center;color:#ef4444;font-weight:600">-${s.agentsReq - v.nbReel}</td>`;
           return `
             <tr>
               <td>${formatDate(v.date_vol)}</td>
@@ -3067,17 +3390,15 @@ async function loadSlaStats(typeFilter, suffix) {
               <td>${v.immatriculation || '—'}</td>
               <td>${s.label}</td>
               <td>${v.profiles?.nom || '—'}</td>
-              <td style="text-align:center">${v.heure_debut?.slice(0,5)} → ${v.heure_fin?.slice(0,5)}</td>
-              <td style="text-align:center;font-weight:600;color:#ef4444">${v.duree} min</td>
-              <td style="text-align:center">${s.sla} min</td>
-              <td style="text-align:center;color:#ef4444;font-weight:600">+${ecart} min</td>
+              <td style="text-align:center">${v.heure_debut?.slice(0,5) ?? '—'} → ${v.heure_fin?.slice(0,5) ?? '—'}</td>
+              ${detailCol}
             </tr>`;
         }).join('');
 
       const panel = document.getElementById(`slaHorsList_${suffix}`);
       panel.querySelector('tbody').innerHTML = filteredRows;
       panel.querySelector('h3').innerHTML =
-        `<i class="fas fa-triangle-exclamation"></i> Vols hors SLA — ${s.label} — ${periodeLabel}`;
+        `<i class="fas fa-triangle-exclamation"></i> Vols non conformes — ${s.label} — ${periodeLabel}`;
       panel.style.display = 'block';
       panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -3100,6 +3421,7 @@ async function loadDashboardSla() {
       const { data: pg } = await supabase
         .from('vols')
         .select('type_vol, heure_debut, heure_fin')
+        .in('statut', ['soumis', 'validé', 'rejeté'])
         .order('date_vol')
         .range(off, off + 999);
       if (!pg || pg.length === 0) break;
@@ -3116,23 +3438,36 @@ async function loadDashboardSla() {
   }
 
   const groups = {
-    transit: { label: 'Transit',  keys: ['Moyen Porteur Transit', 'Gros Porteur Transit'],   total: 0, dans: 0 },
-    stop:    { label: 'Stop CMN', keys: ['Moyen Porteur Stop Cmn', 'Gros Porteur Stop Cmn'], total: 0, dans: 0 },
+    transit: {
+      label: 'Transit',
+      mp: { key: 'Moyen Porteur Transit', total: 0, dans: 0 },
+      gp: { key: 'Gros Porteur Transit',  total: 0, dans: 0 },
+      total: 0, dans: 0,
+    },
+    stop: {
+      label: 'Stop CMN',
+      mp: { key: 'Moyen Porteur Stop Cmn', total: 0, dans: 0 },
+      gp: { key: 'Gros Porteur Stop Cmn',  total: 0, dans: 0 },
+      total: 0, dans: 0,
+    },
   };
 
   vols.forEach(v => {
     if (!v.heure_debut || !v.heure_fin) return;
-    const grp = groups.transit.keys.includes(v.type_vol) ? groups.transit
-              : groups.stop.keys.includes(v.type_vol)    ? groups.stop
-              : null;
+    let grp = null, sub = null;
+    for (const g of Object.values(groups)) {
+      if (v.type_vol === g.mp.key) { grp = g; sub = g.mp; break; }
+      if (v.type_vol === g.gp.key) { grp = g; sub = g.gp; break; }
+    }
     if (!grp) return;
     const [hd, md] = v.heure_debut.split(':').map(Number);
     const [hf, mf] = v.heure_fin.split(':').map(Number);
     let duree = (hf * 60 + mf) - (hd * 60 + md);
     if (duree < 0) duree += 1440;
     const sla = getSlaForBroadType(v.type_vol);
-    grp.total++;
-    if (duree <= sla) grp.dans++;
+    const ok = duree <= sla ? 1 : 0;
+    grp.total++; grp.dans += ok;
+    sub.total++; sub.dans += ok;
   });
 
   const totalAll = groups.transit.total + groups.stop.total;
@@ -3149,6 +3484,10 @@ async function loadDashboardSla() {
         <div class="sla-db-kpi-label"><i class="fas ${icon}"></i> ${g.label}</div>
         <div class="sla-db-kpi-value" style="color:${color}">${taux !== null ? taux + '%' : '—'}</div>
         <div class="sla-db-kpi-sub">${g.dans} / ${g.total} vols</div>
+        <div class="sla-db-kpi-breakdown">
+          <span class="badge-mp"><i class="fas fa-plane-departure"></i> MP&nbsp;${g.mp.dans}/${g.mp.total}</span>
+          <span class="badge-gp"><i class="fas fa-plane"></i> GP&nbsp;${g.gp.dans}/${g.gp.total}</span>
+        </div>
         <a href="#" class="sla-db-link" data-anchor="${type}">Voir détail →</a>
       </div>`;
   }).join('');
@@ -3159,7 +3498,7 @@ async function loadDashboardSla() {
       <div class="sla-db-kpi sla-db-kpi-global">
         <div class="sla-db-kpi-label"><i class="fas fa-chart-pie"></i> Global</div>
         <div class="sla-db-kpi-value" style="color:${colorAll}">${tauxAll !== null ? tauxAll + '%' : '—'}</div>
-        <div class="sla-db-kpi-sub">${dansAll} / ${totalAll} vols avec horaires</div>
+        <div class="sla-db-kpi-sub">${dansAll} / ${totalAll} vols</div>
         <a href="#" class="sla-db-link" data-anchor="">Voir tout →</a>
       </div>
     </div>`;

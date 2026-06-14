@@ -785,6 +785,10 @@ function setupFormEntete() {
       showToast('Veuillez remplir les champs obligatoires (date, code cie, numéro de vol).', 'error');
       return;
     }
+    if (!heureDebut) {
+      showToast('Veuillez renseigner l\'heure de début de nettoyage.', 'error');
+      return;
+    }
     if (modeAT && !typeAvionVal) {
       showToast('Veuillez sélectionner le type avion.', 'error');
       return;
@@ -1445,6 +1449,10 @@ function confirmSoumission() {
 
   const heureFin = getTimePicker('heureFin');
   const heureDebutVal = document.getElementById('rappelHeureDebut').textContent;
+  if (!heureDebutVal || heureDebutVal === '—') {
+    showToast('Heure de début manquante. Veuillez recommencer la saisie du vol.', 'error');
+    return;
+  }
   if (!heureFin) {
     showToast('Veuillez renseigner l\'heure de fin de nettoyage avant de soumettre.', 'error');
     document.getElementById('heureFinH')?.focus();

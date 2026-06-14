@@ -141,39 +141,6 @@
       <div id="viewDashboard" class="view active">
         <div class="page-title"><h2>📊 Tableau de bord</h2></div>
 
-        <!-- Filtres dashboard -->
-        <div class="db-filters">
-          <div class="db-filter-group">
-            <span class="db-filter-label">Période</span>
-            <div class="db-pills">
-              <button class="db-pill active" data-filter="period" data-value="30">30 jours</button>
-              <button class="db-pill" data-filter="period" data-value="7">7 jours</button>
-              <button class="db-pill" data-filter="period" data-value="today">Aujourd'hui</button>
-              <button class="db-pill" data-filter="period" data-value="all">Tout</button>
-            </div>
-          </div>
-          <div class="db-filter-group">
-            <span class="db-filter-label">Type</span>
-            <div class="db-pills">
-              <button class="db-pill active" data-filter="typeVol" data-value="">Tous</button>
-              <button class="db-pill" data-filter="typeVol" data-value="MP">MP</button>
-              <button class="db-pill" data-filter="typeVol" data-value="GP">GP</button>
-            </div>
-          </div>
-          <div class="db-filter-group">
-            <span class="db-filter-label">Mois</span>
-            <select id="dbFilterMois" class="db-select"><option value="">Tous les mois</option></select>
-          </div>
-          <div class="db-filter-group">
-            <span class="db-filter-label">Agent</span>
-            <select id="dbFilterAgent" class="db-select"><option value="">Tous les agents</option></select>
-          </div>
-          <div class="db-filter-group">
-            <span class="db-filter-label">Compagnie</span>
-            <select id="dbFilterCie" class="db-select"><option value="">Toutes</option></select>
-          </div>
-        </div>
-
         <!-- Widget SLA global -->
         <div class="card sla-db-card">
           <div class="card-header">
@@ -216,18 +183,58 @@
           </div>
         </div>
 
+        <!-- Filtres dashboard -->
+        <div class="db-filters">
+          <div class="db-filter-group">
+            <span class="db-filter-label">Période</span>
+            <div class="db-pills">
+              <button class="db-pill active" data-filter="period" data-value="30">30 jours</button>
+              <button class="db-pill" data-filter="period" data-value="7">7 jours</button>
+              <button class="db-pill" data-filter="period" data-value="today">Aujourd'hui</button>
+              <button class="db-pill" data-filter="period" data-value="all">Tout</button>
+            </div>
+          </div>
+          <div class="db-filter-group">
+            <span class="db-filter-label">Type</span>
+            <div class="db-pills">
+              <button class="db-pill active" data-filter="typeVol" data-value="">Tous</button>
+              <button class="db-pill" data-filter="typeVol" data-value="MP">MP</button>
+              <button class="db-pill" data-filter="typeVol" data-value="GP">GP</button>
+            </div>
+          </div>
+          <div class="db-filter-group">
+            <span class="db-filter-label">Mois</span>
+            <select id="dbFilterMois" class="db-select"><option value="">Tous les mois</option></select>
+          </div>
+          <div class="db-filter-group">
+            <span class="db-filter-label">Agent</span>
+            <select id="dbFilterAgent" class="db-select"><option value="">Tous les agents</option></select>
+          </div>
+          <div class="db-filter-group">
+            <span class="db-filter-label">Compagnie</span>
+            <select id="dbFilterCie" class="db-select"><option value="">Toutes</option></select>
+          </div>
+        </div>
+
         <!-- Graphiques — grille unifiée -->
         <div class="charts-main-grid">
 
-          <!-- Ligne 1 : Vols par agent + Conformité par zone -->
+          <!-- Ligne 1 : Vols par agent (1/3) + Conformité par zone (2/3) -->
           <div class="card chart-card">
             <div class="card-header"><h3>Vols par agent</h3></div>
             <div class="card-body" id="chartVolsParAgent">
               <div class="loading-state">Chargement…</div>
             </div>
           </div>
-          <div class="card chart-card">
-            <div class="card-header"><h3>Conformité par zone</h3></div>
+          <div class="card chart-card chart-span2">
+            <div class="card-header">
+              <h3>Conformité par zone</h3>
+              <div class="db-pills" id="zoneTypeFilter">
+                <button class="db-pill active" data-zone-type="">Tous</button>
+                <button class="db-pill" data-zone-type="MP">MP</button>
+                <button class="db-pill" data-zone-type="GP">GP</button>
+              </div>
+            </div>
             <div class="card-body" id="chartConformiteZone">
               <div class="loading-state">Chargement…</div>
             </div>
@@ -241,28 +248,28 @@
             </div>
           </div>
 
-          <!-- Ligne 3 : Répartition + Statut -->
+          <!-- Ligne 3 : Répartition C/NC (1/3) + Contrôles par type (2/3) -->
           <div class="card chart-card">
             <div class="card-header"><h3>Répartition C / NC</h3></div>
             <div class="card-body" id="chartDonutConformite">
               <div class="loading-state">Chargement…</div>
             </div>
           </div>
-          <div class="card chart-card">
-            <div class="card-header"><h3>Statut des vols</h3></div>
-            <div class="card-body" id="chartStatuts">
+          <div class="card chart-card chart-span2">
+            <div class="card-header"><h3>Contrôles par type de vol</h3></div>
+            <div class="card-body" id="chartControlesType">
               <div class="loading-state">Chargement…</div>
             </div>
           </div>
 
-          <!-- Ligne 4 : MP vs GP + Compagnies -->
+          <!-- Ligne 4 : MP vs GP (1/3) + Compagnies (2/3) -->
           <div class="card chart-card">
             <div class="card-header"><h3>Taux conformité MP vs GP</h3></div>
             <div class="card-body" id="chartTypeVol">
               <div class="loading-state">Chargement…</div>
             </div>
           </div>
-          <div class="card chart-card">
+          <div class="card chart-card chart-span2">
             <div class="card-header"><h3>Vols par compagnie</h3></div>
             <div class="card-body" id="chartCompagnies">
               <div class="loading-state">Chargement…</div>
@@ -817,11 +824,19 @@
         <div id="slaConformiteTransitSection">
           <div class="sla-section-title">
             <i class="fas fa-gauge-high"></i> Conformité SLA — Transit
-            <span class="sla-section-hint">Vols Transit dont la durée réelle respecte le SLA configuré.</span>
+            <span class="sla-section-hint">Analysez la conformité par critère : durée de traitement ou effectif agents.</span>
           </div>
           <div class="sla-stats-filters">
             <label>Mois</label>
             <select id="slaStatsMoisTransit" class="db-select"><option value="">Tous les mois</option></select>
+            <div class="db-pills" id="slaCritereTransit">
+              <button class="db-pill active" data-critere="temps">
+                <i class="fas fa-clock"></i> Temps de traitement
+              </button>
+              <button class="db-pill" data-critere="agents">
+                <i class="fas fa-users"></i> Nombre d'agents
+              </button>
+            </div>
             <button class="btn btn-outline btn-sm" id="btnSlaStatsRefreshTransit">
               <i class="fas fa-rotate-right"></i> Actualiser
             </button>
@@ -837,11 +852,19 @@
         <div id="slaConformiteStopSection">
           <div class="sla-section-title">
             <i class="fas fa-circle-stop"></i> Conformité SLA — Stop CMN
-            <span class="sla-section-hint">Vols Stop CMN dont la durée réelle respecte le SLA configuré.</span>
+            <span class="sla-section-hint">Analysez la conformité par critère : durée de traitement ou effectif agents.</span>
           </div>
           <div class="sla-stats-filters">
             <label>Mois</label>
             <select id="slaStatsMoisStop" class="db-select"><option value="">Tous les mois</option></select>
+            <div class="db-pills" id="slaCritereStop">
+              <button class="db-pill active" data-critere="temps">
+                <i class="fas fa-clock"></i> Temps de traitement
+              </button>
+              <button class="db-pill" data-critere="agents">
+                <i class="fas fa-users"></i> Nombre d'agents
+              </button>
+            </div>
             <button class="btn btn-outline btn-sm" id="btnSlaStatsRefreshStop">
               <i class="fas fa-rotate-right"></i> Actualiser
             </button>
@@ -1122,6 +1145,9 @@
 
   <!-- ZONE D'IMPRESSION -->
   <div id="printZone" class="print-zone" style="display:none;"></div>
+
+  <!-- Chart.js pour graphiques interactifs -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 
   <!-- jsPDF pour archivage PDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
