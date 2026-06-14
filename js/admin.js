@@ -1247,7 +1247,12 @@ async function loadAgentsTable() {
 window.resetPasswordAgent = async function(agentId, nom) {
   if (!confirm(`Réinitialiser le mot de passe de ${nom} à "CABINE" ?`)) return;
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data } = await supabase.auth.getSession();
+    const session = data?.session;
+    if (!session?.access_token) {
+      showToast('Session expirée — veuillez vous reconnecter.', 'error');
+      return;
+    }
     const res = await fetch(
       'https://htkdryptzdvztcgjgfax.supabase.co/functions/v1/reset-password',
       {
@@ -1256,11 +1261,13 @@ window.resetPasswordAgent = async function(agentId, nom) {
         body: JSON.stringify({ userId: agentId })
       }
     );
-    const result = await res.json();
-    if (!res.ok) throw new Error(result.error || 'Erreur serveur');
+    let result;
+    try { result = await res.json(); } catch { result = {}; }
+    if (!res.ok) throw new Error(result.error || `Erreur serveur (${res.status})`);
     showToast(`Mot de passe de ${nom} réinitialisé à "CABINE".`, 'success', 4000);
   } catch (err) {
     showToast(err.message || 'Erreur réinitialisation', 'error');
+    console.error('[resetPasswordAgent]', err);
   }
 };
 
