@@ -463,6 +463,7 @@ async function loadDashboard() {
     _safe(() => renderTopNC(allControles));
     loadActiviteRecente();
     loadDashboardSla();
+    loadDashboardSlaFiltered(vols.map(v => v.id));
   } catch (err) {
     console.error('Dashboard error:', err);
   }
@@ -1097,14 +1098,15 @@ async function loadTousControles(filters = {}) {
 
       if (vols.length) {
         const volIds = vols.map(v => v.id);
-        const CHUNK = 50;
+        const CHUNK = 20;
         const allCtrl = [];
         for (let i = 0; i < volIds.length; i += CHUNK) {
           const chunk = volIds.slice(i, i + CHUNK);
           const { data: ctrlData, error: ctrlError } = await supabase
             .from('controles')
             .select('vol_id, conformite')
-            .in('vol_id', chunk);
+            .in('vol_id', chunk)
+            .limit(10000);
           if (ctrlError) throw ctrlError;
           allCtrl.push(...(ctrlData || []));
         }
@@ -1138,10 +1140,10 @@ async function loadTousControles(filters = {}) {
           <td>${vol.type_vol}</td>
           <td>${vol.profiles?.nom || '—'}</td>
           <td>${vol.heure_debut || '—'} → ${vol.heure_fin || '—'}</td>
-          <td>${total}</td>
+          <td>${total > 0 ? total : '<span class="badge badge-warn" title="Aucun point de contrôle enregistré">Vide</span>'}</td>
           <td>${C}</td>
           <td><span class="badge-nc-count">${NC}</span></td>
-          <td>${taux !== '—' ? taux + '%' : '—'}</td>
+          <td>${taux !== '—' ? taux + '%' : (total === 0 ? '<span class="badge badge-warn">—</span>' : '—')}</td>
           <td>${badge}</td>
           <td class="actions-cell">
             <button class="btn btn-outline btn-xs" onclick="adminViewFiche('${vol.id}', '${vol.numero_vol}', '${vol.date_vol}')">Voir</button>
@@ -3627,36 +3629,10 @@ async function loadSlaStats(typeFilter, suffix, critere = 'temps') {
 
 // ---- WIDGET SLA GLOBAL (Dashboard) ----
 
-async function loadDashboardSla() {
-  const content = document.getElementById('slaGlobalContent');
+function _renderSlaWidget(vols, containerId) {
+  const content = document.getElementById(containerId);
   if (!content) return;
 
-  let vols = [];
-  if (isDemoMode) {
-    vols = demoGetVols();
-  } else {
-    const all = [];
-    let off = 0;
-    while (true) {
-      const { data: pg } = await supabase
-        .from('vols')
-        .select('type_vol, heure_debut, heure_fin, materiels_utilises(categorie, quantite)')
-        .in('statut', ['soumis', 'validé', 'rejeté'])
-        .order('date_vol')
-        .range(off, off + 999);
-      if (!pg || pg.length === 0) break;
-      all.push(...pg);
-      if (pg.length < 1000) break;
-      off += 1000;
-    }
-    vols = all;
-    if (Object.keys(slaConfigCache).length === 0) {
-      const { data } = await supabase.from('sla_config').select('*');
-      (data || []).forEach(r => { slaConfigCache[r.type_vol] = r; });
-    }
-  }
-
-  // 4 types de vol
   const TYPES = [
     { key: 'Moyen Porteur Transit',  label: 'MP Transit',  anchor: 'transit' },
     { key: 'Gros Porteur Transit',   label: 'GP Transit',  anchor: 'transit' },
@@ -3788,6 +3764,69 @@ async function loadDashboardSla() {
       loadSlaConformiteView();
     });
   });
+}
+
+async function loadDashboardSla() {
+  const content = document.getElementById('slaGlobalContent');
+  if (!content) return;
+
+  let vols = [];
+  if (isDemoMode) {
+    vols = demoGetVols();
+  } else {
+    const all = [];
+    let off = 0;
+    while (true) {
+      const { data: pg } = await supabase
+        .from('vols')
+        .select('type_vol, heure_debut, heure_fin, materiels_utilises(categorie, quantite)')
+        .in('statut', ['soumis', 'validé', 'rejeté'])
+        .order('date_vol')
+        .range(off, off + 999);
+      if (!pg || pg.length === 0) break;
+      all.push(...pg);
+      if (pg.length < 1000) break;
+      off += 1000;
+    }
+    vols = all;
+    if (Object.keys(slaConfigCache).length === 0) {
+      const { data } = await supabase.from('sla_config').select('*');
+      (data || []).forEach(r => { slaConfigCache[r.type_vol] = r; });
+    }
+  }
+  _renderSlaWidget(vols, 'slaGlobalContent');
+}
+
+async function loadDashboardSlaFiltered(volIds) {
+  const content = document.getElementById('slaFilteredContent');
+  if (!content) return;
+  content.innerHTML = '<div class="loading-state">Chargement…</div>';
+
+  if (!volIds || !volIds.length) {
+    content.innerHTML = '<div class="empty-state">Aucun vol dans la sélection.</div>';
+    return;
+  }
+
+  let vols = [];
+  if (isDemoMode) {
+    const idSet = new Set(volIds);
+    vols = demoGetVols().filter(v => idSet.has(v.id));
+  } else {
+    const CHUNK = 200;
+    const chunks = [];
+    for (let i = 0; i < volIds.length; i += CHUNK) chunks.push(volIds.slice(i, i + CHUNK));
+    const results = await Promise.all(chunks.map(c =>
+      supabase.from('vols')
+        .select('type_vol, heure_debut, heure_fin, materiels_utilises(categorie, quantite)')
+        .in('id', c)
+    ));
+    vols = results.flatMap(r => r.data || []);
+    if (Object.keys(slaConfigCache).length === 0) {
+      const { data } = await supabase.from('sla_config').select('*');
+      (data || []).forEach(r => { slaConfigCache[r.type_vol] = r; });
+    }
+  }
+  _renderSlaWidget(vols, 'slaFilteredContent');
 }
 
 // ---- ARCHIVAGE ----

@@ -1561,6 +1561,31 @@ document.getElementById('btnConfirmerSoumission')?.addEventListener('click', asy
   try {
     await flushSaves();
     await autosaveMateriel();
+
+    // Vérification DB : les contrôles sont-ils bien tous enregistrés ?
+    const expectedTotal = getTotalPoints(currentTypeVol);
+    const { count, error: cntErr } = await supabase
+      .from('controles')
+      .select('*', { count: 'exact', head: true })
+      .eq('vol_id', currentVolId);
+
+    if (!cntErr && count < expectedTotal) {
+      // Tentative de resynchronisation
+      await flushSaves();
+      const { count: count2 } = await supabase
+        .from('controles')
+        .select('*', { count: 'exact', head: true })
+        .eq('vol_id', currentVolId);
+
+      if ((count2 ?? 0) < expectedTotal) {
+        showToast(
+          `Synchronisation incomplète : ${count2 ?? count}/${expectedTotal} points enregistrés. Vérifiez votre connexion et réessayez.`,
+          'error'
+        );
+        return;
+      }
+    }
+
     const heureFin = getTimePicker('heureFin');
     const { error } = await supabase.from('vols')
       .update({ statut: 'soumis', heure_fin: heureFin })

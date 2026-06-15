@@ -2899,8 +2899,9 @@ input, select, textarea { font-family: var(--font); }
   font-weight: 500;
 }
 
-.badge-ok  { background: rgba(16,185,129,.15); color: #10b981; padding: .2rem .6rem; border-radius: 20px; font-size: .75rem; font-weight: 600; }
-.badge-off { background: rgba(148,163,184,.15); color: #94a3b8; padding: .2rem .6rem; border-radius: 20px; font-size: .75rem; font-weight: 600; }
+.badge-ok   { background: rgba(16,185,129,.15); color: #10b981; padding: .2rem .6rem; border-radius: 20px; font-size: .75rem; font-weight: 600; }
+.badge-off  { background: rgba(148,163,184,.15); color: #94a3b8; padding: .2rem .6rem; border-radius: 20px; font-size: .75rem; font-weight: 600; }
+.badge-warn { background: rgba(245,158,11,.15);  color: #f59e0b; padding: .2rem .6rem; border-radius: 20px; font-size: .75rem; font-weight: 600; }
 
 /* logo miniature dans la table compagnies */
 .cie-table-logo {
