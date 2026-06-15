@@ -887,6 +887,34 @@ input, select, textarea { font-family: var(--font); }
 .materiel-section h4 { font-size: .9375rem; font-weight: 600; color: #374151; margin-bottom: .75rem; }
 .materiel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .5rem; }
 
+.materiel-manquants {
+  margin-top: 1.25rem;
+  background: #fffbeb;
+  border: 1.5px solid #f59e0b;
+  border-radius: 10px;
+  padding: .75rem 1rem;
+}
+.manquants-header {
+  font-weight: 600;
+  color: #92400e;
+  margin-bottom: .5rem;
+  font-size: .9rem;
+}
+.manquants-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: .85rem;
+  color: #78350f;
+}
+.manquants-list li { margin-bottom: .2rem; }
+.modal-manquants {
+  margin-top: 1rem;
+  background: #fffbeb;
+  border: 1.5px solid #f59e0b;
+  border-radius: 10px;
+  padding: .75rem 1rem;
+}
+
 .checkbox-label {
   display: flex;
   align-items: center;

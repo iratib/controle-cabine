@@ -964,13 +964,14 @@ function afficherFiche(vol) {
   document.getElementById('nbAspirateurs').addEventListener('change', () => autosaveMateriel());
   document.getElementById('nbAgents').addEventListener('change', () => autosaveMateriel());
   document.querySelectorAll('.mat-check').forEach(cb => {
-    cb.addEventListener('change', () => autosaveMateriel());
+    cb.addEventListener('change', () => { autosaveMateriel(); updateMaterielManquants(); });
   });
 
   // Tout cocher
   document.getElementById('btnToutCocher').addEventListener('click', () => {
     document.querySelectorAll('.mat-check').forEach(cb => { cb.checked = true; });
     autosaveMateriel();
+    updateMaterielManquants();
     showToast('Tout le matériel coché ✓', 'success');
   });
 
@@ -1218,6 +1219,29 @@ async function saveControle(key) {
   }
 }
 
+function updateMaterielManquants() {
+  const div = document.getElementById('materielManquants');
+  if (!div) return;
+  const unchecked = [...document.querySelectorAll('.mat-check:not(:checked)')];
+  if (unchecked.length === 0) {
+    div.style.display = 'none';
+    return;
+  }
+  const byCat = {};
+  unchecked.forEach(cb => {
+    const cat = cb.dataset.cat;
+    if (!byCat[cat]) byCat[cat] = [];
+    byCat[cat].push(cb.dataset.nom);
+  });
+  const rows = Object.entries(byCat)
+    .map(([cat, items]) => `<li><strong>${cat} :</strong> ${items.join(', ')}</li>`)
+    .join('');
+  div.innerHTML = `
+    <div class="manquants-header">⚠️ Matériel non fourni / non utilisé (${unchecked.length} item${unchecked.length > 1 ? 's' : ''})</div>
+    <ul class="manquants-list">${rows}</ul>`;
+  div.style.display = 'block';
+}
+
 async function autosaveMateriel() {
   if (!currentVolId || isDemoMode) return;
 
@@ -1424,14 +1448,6 @@ function confirmSoumission() {
     return;
   }
 
-  const totalMat = document.querySelectorAll('.mat-check').length;
-  const checkedMat = document.querySelectorAll('.mat-check:checked').length;
-  if (checkedMat < totalMat) {
-    showToast(`Veuillez compléter la section Matériel utilisé (${checkedMat}/${totalMat} cochés).`, 'error');
-    document.getElementById('sectionMateriel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    return;
-  }
-
   const nbAgentsVal = parseInt(document.getElementById('nbAgents').value);
   if (!nbAgentsVal || nbAgentsVal < 1) {
     showToast('Veuillez indiquer le nombre d\'agents de nettoyage (minimum 1).', 'error');
@@ -1478,6 +1494,26 @@ function confirmSoumission() {
 
   const taux = filled > 0 ? ((C / filled) * 100).toFixed(1) : '0.0';
 
+  // Matériel non coché → section manquants dans le modal
+  const uncheckedMat = [...document.querySelectorAll('.mat-check:not(:checked)')];
+  let manquantsModalHtml = '';
+  if (uncheckedMat.length > 0) {
+    const byCat = {};
+    uncheckedMat.forEach(cb => {
+      const cat = cb.dataset.cat;
+      if (!byCat[cat]) byCat[cat] = [];
+      byCat[cat].push(cb.dataset.nom);
+    });
+    const rows = Object.entries(byCat)
+      .map(([cat, items]) => `<li><strong>${cat} :</strong> ${items.join(', ')}</li>`)
+      .join('');
+    manquantsModalHtml = `
+      <div class="modal-manquants">
+        <div class="manquants-header">⚠️ Matériel non fourni / non utilisé (${uncheckedMat.length} item${uncheckedMat.length > 1 ? 's' : ''})</div>
+        <ul class="manquants-list">${rows}</ul>
+      </div>`;
+  }
+
   document.getElementById('modalResume').innerHTML = `
     <div class="resume-grid">
       <div class="resume-item"><span class="resume-label">Total points</span><span class="resume-value">${total}</span></div>
@@ -1486,6 +1522,7 @@ function confirmSoumission() {
       <div class="resume-item badge-nc"><span class="resume-label">Non conformes</span><span class="resume-value">${NC}</span></div>
       <div class="resume-item"><span class="resume-label">Taux conformité</span><span class="resume-value">${taux}%</span></div>
     </div>
+    ${manquantsModalHtml}
   `;
 
   document.getElementById('modalSoumettre').style.display = 'flex';
