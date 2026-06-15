@@ -2005,6 +2005,9 @@ async function loadAnalyseType(type) {
     // ---- Section 08 : Activité des contrôleurs ----
     renderActiviteControleurs(type, vols, controles, profiles);
 
+    // ---- Section 09 : Partie Client ----
+    renderPartieClient(type, vols, controles);
+
     // ---- Timestamp actualisation ----
     if (refreshIcon) refreshIcon.classList.remove('spin');
     if (lastUpdatedEl) {
@@ -2710,6 +2713,134 @@ function renderZoneConformite(type, controles) {
         ${ncCardsHtml}
         ${retenirHtml}
       </div>
+    </div>
+  `;
+}
+
+// ---- Section 09 : Partie Client ----
+
+function renderPartieClient(type, vols, controles) {
+  const isMP = type === 'MP';
+  const container = document.getElementById(isMP ? 'mpPartieClient' : 'gpPartieClient');
+  if (!container) return;
+
+  const clientControles = controles.filter(c => c.zone === 'Client');
+
+  if (!clientControles.length) {
+    container.innerHTML = '<div class="empty-state">Aucune donnée de la partie Client disponible.</div>';
+    return;
+  }
+
+  // ---- KPI calculs ----
+  const C  = clientControles.filter(c => c.conformite === 'C').length;
+  const NC = clientControles.filter(c => c.conformite === 'NC').length;
+  const total = C + NC;
+  const taux = total > 0 ? C / total * 100 : 0;
+  const tauxStr = taux.toFixed(2);
+
+  // Vols avec/sans NC client
+  const ncVolSet = new Set(clientControles.filter(c => c.conformite === 'NC').map(c => c.vol_id));
+  const volIds = [...new Set(clientControles.map(c => c.vol_id))];
+  const volsAvecNC = ncVolSet.size;
+  const volsSansNC = volIds.length - volsAvecNC;
+  const pctSans = volIds.length > 0 ? (volsSansNC / volIds.length * 100).toFixed(1) : '0';
+
+  // Score badge
+  const scoreBadge = taux >= 98 ? { label: 'Excellent', color: '#16a34a', bg: '#dcfce7' }
+    : taux >= 90 ? { label: 'Bon', color: '#2563eb', bg: '#dbeafe' }
+    : taux >= 80 ? { label: 'Passable', color: '#d97706', bg: '#fef3c7' }
+    : { label: 'À améliorer', color: '#dc2626', bg: '#fee2e2' };
+
+  // ---- Stats par point ----
+  const pointStats = {};
+  clientControles.forEach(c => {
+    if (!c.point_controle) return;
+    if (!pointStats[c.point_controle]) pointStats[c.point_controle] = { C: 0, NC: 0 };
+    if (c.conformite === 'C') pointStats[c.point_controle].C++;
+    else if (c.conformite === 'NC') pointStats[c.point_controle].NC++;
+  });
+
+  const pointList = Object.entries(pointStats)
+    .map(([pt, s]) => {
+      const t = s.C + s.NC;
+      return { point: pt, C: s.C, NC: s.NC, total: t, tauxNC: t > 0 ? s.NC / t * 100 : 0, tauxC: t > 0 ? s.C / t * 100 : 0 };
+    })
+    .sort((a, b) => b.tauxNC - a.tauxNC);
+
+  const maxNC = Math.max(...pointList.map(p => p.NC), 1);
+
+  const barsHtml = pointList.map(d => {
+    const fillPct = (d.NC / maxNC * 100).toFixed(1);
+    const conformPct = d.tauxC.toFixed(1);
+    const ncPct = d.tauxNC.toFixed(1);
+    const barColor = d.tauxNC === 0 ? '#16a34a' : d.tauxNC < 5 ? '#f59e0b' : '#dc2626';
+    return `
+      <div class="client-point-row">
+        <div class="client-point-label">${d.point}</div>
+        <div class="client-point-bars">
+          <div class="client-point-track">
+            <div class="client-point-fill" style="width:${fillPct}%;background:${barColor};"></div>
+          </div>
+          <span class="client-point-nc">${d.NC > 0 ? d.NC + ' NC' : '—'}</span>
+          <span class="client-point-taux" style="color:${barColor};">${d.NC > 0 ? ncPct + '% NC' : '✓ 100%'}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  // ---- Lecture auto ----
+  const worstPoint = pointList[0];
+  let lectureTitre, lectureTexte;
+  if (taux >= 98) {
+    lectureTitre = 'Expérience client excellente.';
+    lectureTexte = `Avec ${tauxStr} % de conformité sur la partie Client, la propreté perçue par les passagers est très satisfaisante. ${pctSans} % des vols présentent une zone Client 100 % conforme.${worstPoint?.NC > 0 ? ` Le point « ${worstPoint.point} » reste le seul à surveiller (${worstPoint.NC} NC).` : ''}`;
+  } else if (taux >= 90) {
+    lectureTitre = 'Bonne qualité perçue côté passager.';
+    lectureTexte = `Le taux de conformité Client est de ${tauxStr} %. Les passagers trouvent généralement la cabine en bon état à l'embarquement. ${volsAvecNC > 0 ? `${volsAvecNC} vol${volsAvecNC > 1 ? 's' : ''} présentent au moins un point client non conforme.` : ''} Le point le plus fréquemment NC est « ${worstPoint?.point} » (${worstPoint?.NC || 0} NC).`;
+  } else if (taux >= 80) {
+    lectureTitre = 'Qualité perçue passager à renforcer.';
+    lectureTexte = `À ${tauxStr} % de conformité Client, des efforts ciblés sont nécessaires. ${volsAvecNC} vol${volsAvecNC > 1 ? 's' : ''} sur ${volIds.length} présentent des écarts côté passager. Les points « ${pointList.slice(0,2).map(p=>p.point).join(' » et « ')} » concentrent l'essentiel des non-conformités.`;
+  } else {
+    lectureTitre = 'Expérience client insuffisante — action requise.';
+    lectureTexte = `Avec seulement ${tauxStr} % de conformité sur la partie Client, l'image perçue par les passagers est dégradée. ${NC} non-conformités relevées sur ${volsAvecNC} vols (${(100 - parseFloat(pctSans)).toFixed(1)} % des contrôles). Un plan d'action ciblé est indispensable sur les points les plus récurrents.`;
+  }
+
+  container.innerHTML = `
+    <div class="client-kpi-grid">
+      <div class="rapport-perf-card perf-red">
+        <i class="fas fa-user-check perf-icon"></i>
+        <div class="perf-value">${tauxStr} %</div>
+        <div class="perf-label">Taux de conformité Client</div>
+        <div class="perf-sub">${C.toLocaleString('fr-FR')} points C / ${total.toLocaleString('fr-FR')} évalués</div>
+      </div>
+      <div class="rapport-perf-card perf-green">
+        <i class="fas fa-face-smile perf-icon"></i>
+        <div class="perf-value">${pctSans} %</div>
+        <div class="perf-label">Vols 100 % conformes côté client</div>
+        <div class="perf-sub">${volsSansNC.toLocaleString('fr-FR')} vols sans aucun écart client</div>
+      </div>
+      <div class="rapport-perf-card perf-amber">
+        <i class="fas fa-face-frown perf-icon"></i>
+        <div class="perf-value">${volsAvecNC.toLocaleString('fr-FR')}</div>
+        <div class="perf-label">Vols avec ≥ 1 écart client</div>
+        <div class="perf-sub">sur ${volIds.length.toLocaleString('fr-FR')} vols évalués</div>
+      </div>
+      <div class="rapport-perf-card perf-dark" style="background:${scoreBadge.bg};border-left:4px solid ${scoreBadge.color};">
+        <i class="fas fa-star perf-icon" style="color:${scoreBadge.color};"></i>
+        <div class="perf-value" style="color:${scoreBadge.color};">${scoreBadge.label}</div>
+        <div class="perf-label">Score expérience client</div>
+        <div class="perf-sub">${NC.toLocaleString('fr-FR')} NC client relevée${NC > 1 ? 's' : ''}</div>
+      </div>
+    </div>
+
+    <div class="client-points-section">
+      <div class="client-points-title">Détail par critère client <em>(du plus NC au moins NC)</em></div>
+      <div class="client-points-list">${barsHtml}</div>
+    </div>
+
+    <div class="rapport-lecture-card" style="margin-top:1.25rem;">
+      <div class="rapport-lecture-title">Lecture de l'expérience client</div>
+      <p><strong>${lectureTitre}</strong></p>
+      <p>${lectureTexte}</p>
     </div>
   `;
 }

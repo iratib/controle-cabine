@@ -2548,18 +2548,107 @@ input, select, textarea { font-family: var(--font); }
   margin: 0;
 }
 
+/* ---- Section 09 : Partie Client ---- */
+
+.client-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.client-points-section {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+}
+
+.client-points-title {
+  font-size: .9rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 1rem;
+}
+.client-points-title em {
+  font-weight: 400;
+  color: #64748b;
+  font-size: .82rem;
+}
+
+.client-points-list {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+
+.client-point-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: .75rem;
+}
+
+.client-point-label {
+  font-size: .84rem;
+  font-weight: 600;
+  color: #1e293b;
+  min-width: 0;
+}
+
+.client-point-bars {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  min-width: 280px;
+}
+
+.client-point-track {
+  flex: 1;
+  background: #e2e8f0;
+  border-radius: 4px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.client-point-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width .4s ease;
+}
+
+.client-point-nc {
+  font-size: .78rem;
+  color: #64748b;
+  white-space: nowrap;
+  min-width: 42px;
+  text-align: right;
+}
+
+.client-point-taux {
+  font-size: .78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  min-width: 64px;
+  text-align: right;
+}
+
 /* Responsive */
 @media (max-width: 900px) {
   .typo-wrap         { grid-template-columns: 1fr; }
   .typo-donut        { justify-content: flex-start; }
   .evol-wrap         { grid-template-columns: 1fr; }
   .ctrl-wrap         { grid-template-columns: 1fr; }
+  .client-kpi-grid   { grid-template-columns: 1fr 1fr; }
+  .client-point-row  { grid-template-columns: 1fr; }
+  .client-point-bars { min-width: unset; width: 100%; }
 }
 
 @media (max-width: 480px) {
   .typo-cards-grid   { grid-template-columns: 1fr; }
   .ctrl-table th,
   .ctrl-table td     { padding: .5rem .6rem; font-size: .8rem; }
+  .client-kpi-grid   { grid-template-columns: 1fr; }
 }
 
 /* Responsive */
