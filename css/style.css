@@ -1251,6 +1251,13 @@ input, select, textarea { font-family: var(--font); }
 }
 .chart-full  { grid-column: 1 / -1; }
 .chart-span2 { grid-column: span 2; }
+
+.zone-type-badge {
+  font-size: .7rem; font-weight: 800; letter-spacing: .07em;
+  padding: .18rem .55rem; border-radius: 20px;
+}
+.zone-badge-mp { background: rgba(99,102,241,.15); color: #6366f1; }
+.zone-badge-gp { background: rgba(245,158,11,.15);  color: #d97706; }
 .chart-full .card-body { min-height: 320px; justify-content: flex-start; }
 /* Legacy — conservé pour compatibilité */
 .charts-grid {
@@ -1902,7 +1909,9 @@ input, select, textarea { font-family: var(--font); }
   gap: .875rem;
   margin-bottom: 2rem;
 }
+.rapport-zones-4 { grid-template-columns: repeat(4, 1fr); }
 .rapport-zones-5 { grid-template-columns: repeat(5, 1fr); }
+.rapport-zones-6 { grid-template-columns: repeat(3, 1fr); }
 .rapport-zones-7 { grid-template-columns: repeat(4, 1fr); }
 
 .rapport-zone-card {
@@ -1930,6 +1939,7 @@ input, select, textarea { font-family: var(--font); }
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
 }
+.rapport-legend-single { grid-template-columns: 1fr; }
 
 .rapport-legend-card {
   background: #f8fafc;
@@ -2655,7 +2665,9 @@ input, select, textarea { font-family: var(--font); }
 @media (max-width: 900px) {
   .rapport-kpi-grid    { grid-template-columns: repeat(2, 1fr); }
   .rapport-perf-grid   { grid-template-columns: repeat(2, 1fr); }
+  .rapport-zones-4,
   .rapport-zones-5,
+  .rapport-zones-6,
   .rapport-zones-7     { grid-template-columns: repeat(2, 1fr); }
   .rapport-legend-grid { grid-template-columns: 1fr; }
   .rapport-section-block { padding: 1.5rem 1.25rem; }
@@ -2671,7 +2683,9 @@ input, select, textarea { font-family: var(--font); }
   .rapport-perf-grid { grid-template-columns: 1fr 1fr; }
   .rapport-kpi-value { font-size: 1.75rem; }
   .perf-value        { font-size: 1.75rem; }
+  .rapport-zones-4,
   .rapport-zones-5,
+  .rapport-zones-6,
   .rapport-zones-7   { grid-template-columns: 1fr 1fr; }
   .zone-bar-label    { width: 90px; min-width: 90px; font-size: .75rem; }
   .zone-chart-xaxis,
@@ -2888,6 +2902,74 @@ input, select, textarea { font-family: var(--font); }
 .badge-ok  { background: rgba(16,185,129,.15); color: #10b981; padding: .2rem .6rem; border-radius: 20px; font-size: .75rem; font-weight: 600; }
 .badge-off { background: rgba(148,163,184,.15); color: #94a3b8; padding: .2rem .6rem; border-radius: 20px; font-size: .75rem; font-weight: 600; }
 
+/* logo miniature dans la table compagnies */
+.cie-table-logo {
+  width: 40px; height: 24px; object-fit: contain; display: block;
+}
+
+/* select inline pour changer le logo */
+.cie-logo-select {
+  font-size: .75rem; padding: .15rem .3rem; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-card);
+  color: var(--text-primary); cursor: pointer; margin-right: .4rem;
+  max-width: 130px;
+}
+
+/* ---- CARTES VOLS PAR COMPAGNIE (dashboard) ---- */
+
+.cie-cards-grid {
+  display: flex; flex-direction: column; gap: .6rem;
+  padding: .25rem 0;
+}
+
+.cie-vol-card {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .5rem .75rem; border-radius: 8px;
+  background: var(--bg-main); border: 1px solid var(--border);
+  transition: background .15s;
+}
+.cie-vol-card:hover { background: var(--bg-hover, rgba(99,102,241,.06)); }
+
+.cie-vol-logo {
+  width: 48px; height: 30px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; overflow: hidden;
+  background: var(--bg-card);
+}
+.cie-vol-logo img {
+  max-width: 100%; max-height: 100%; object-fit: contain;
+}
+
+/* initiales quand pas de logo */
+.cie-vol-initials {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%;
+  font-size: .7rem; font-weight: 800; letter-spacing: .04em;
+  color: var(--ram-red); background: rgba(185,28,28,.08);
+  border-radius: 6px;
+}
+.cie-initials-sm {
+  width: 40px; height: 24px; font-size: .65rem; border-radius: 4px;
+}
+
+.cie-vol-info { flex: 1; min-width: 0; }
+.cie-vol-name {
+  font-size: .8rem; font-weight: 600; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cie-vol-count {
+  font-size: .72rem; color: var(--text-secondary); margin-top: .1rem;
+}
+.cie-vol-bar-track {
+  margin-top: .35rem; height: 4px; border-radius: 2px;
+  background: var(--border); overflow: hidden;
+}
+.cie-vol-bar-fill {
+  height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  transition: width .4s ease;
+}
+
 /* ---- IMMATRICULATIONS TABS ---- */
 
 .immat-tabs {
@@ -3066,6 +3148,57 @@ input, select, textarea { font-family: var(--font); }
 /* ---- SLA WIDGET DASHBOARD ---- */
 .sla-db-card { margin-bottom: 1.25rem; }
 
+/* Nouvelle grille 8 cartes (2 critères × 4 types) */
+.sla-db-global-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sla-db-critere-section {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+.sla-db-critere-title {
+  font-size: .75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding-bottom: .25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.sla-db-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .75rem;
+}
+
+.sla-db-footer {
+  margin-top: .75rem;
+  text-align: right;
+}
+
+.sla-db-separator {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1rem 0;
+}
+
+@media (max-width: 900px) {
+  .sla-db-row { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .sla-db-row { grid-template-columns: 1fr 1fr; }
+}
+
+/* Ancienne grille (conservée pour compatibilité) */
 .sla-db-grid {
   display: flex;
   gap: 1.25rem;

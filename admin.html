@@ -226,16 +226,21 @@
               <div class="loading-state">Chargement…</div>
             </div>
           </div>
-          <div class="card chart-card chart-span2">
+          <div class="card chart-card">
             <div class="card-header">
               <h3>Conformité par zone</h3>
-              <div class="db-pills" id="zoneTypeFilter">
-                <button class="db-pill active" data-zone-type="">Tous</button>
-                <button class="db-pill" data-zone-type="MP">MP</button>
-                <button class="db-pill" data-zone-type="GP">GP</button>
-              </div>
+              <span class="zone-type-badge zone-badge-mp">MP</span>
             </div>
-            <div class="card-body" id="chartConformiteZone">
+            <div class="card-body" id="chartConformiteZoneMP">
+              <div class="loading-state">Chargement…</div>
+            </div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-header">
+              <h3>Conformité par zone</h3>
+              <span class="zone-type-badge zone-badge-gp">GP</span>
+            </div>
+            <div class="card-body" id="chartConformiteZoneGP">
               <div class="loading-state">Chargement…</div>
             </div>
           </div>
@@ -469,24 +474,19 @@
             </div>
 
             <!-- Zones évaluées -->
-            <h3 class="rapport-subtitle">Les 5 zones évaluées</h3>
-            <div class="rapport-zones-grid rapport-zones-5">
+            <h3 class="rapport-subtitle">Les 4 zones évaluées</h3>
+            <div class="rapport-zones-grid rapport-zones-4">
               <div class="rapport-zone-card"><i class="fas fa-plane rapport-zone-icon"></i><span>Cockpit</span></div>
               <div class="rapport-zone-card"><i class="fas fa-chair rapport-zone-icon"></i><span>Cabine / Sièges</span></div>
               <div class="rapport-zone-card"><i class="fas fa-toilet rapport-zone-icon"></i><span>Toilettes</span></div>
               <div class="rapport-zone-card"><i class="fas fa-utensils rapport-zone-icon"></i><span>Galley / Office</span></div>
-              <div class="rapport-zone-card"><i class="fas fa-eye rapport-zone-icon"></i><span>Contrôle final / Impression</span></div>
             </div>
 
             <!-- Légende -->
-            <div class="rapport-legend-grid">
+            <div class="rapport-legend-grid rapport-legend-single">
               <div class="rapport-legend-card">
                 <div class="rapport-legend-icon-wrap"><i class="fas fa-circle-check" style="color:#e31837;font-size:1.5rem;"></i></div>
                 <div><strong>Échelle d'évaluation.</strong>&nbsp; Chaque point noté <strong>C</strong> (Conforme) ou <strong>NC</strong> (Non Conforme) ; chaque écart est qualifié par une remarque.</div>
-              </div>
-              <div class="rapport-legend-card rapport-legend-card-alert">
-                <div class="rapport-legend-icon-wrap"><i class="fas fa-eye" style="color:#e31837;font-size:1.5rem;"></i></div>
-                <div><strong>« Contrôle final » — aspect client.</strong>&nbsp; Vérification globale du point de vue passager (propreté d'ensemble, odeurs, hublots, déchets) : le verdict d'acceptation de la cabine juste avant l'embarquement.</div>
               </div>
             </div>
           </div>
@@ -639,15 +639,14 @@
             </div>
 
             <!-- Zones évaluées -->
-            <h3 class="rapport-subtitle">Les 7 zones évaluées</h3>
-            <div class="rapport-zones-grid rapport-zones-7">
+            <h3 class="rapport-subtitle">Les 6 zones évaluées</h3>
+            <div class="rapport-zones-grid rapport-zones-6">
               <div class="rapport-zone-card"><i class="fas fa-plane rapport-zone-icon"></i><span>Cockpit</span></div>
               <div class="rapport-zone-card"><i class="fas fa-chair rapport-zone-icon"></i><span>Cabine / Sièges</span></div>
               <div class="rapport-zone-card"><i class="fas fa-star rapport-zone-icon"></i><span>Premium Economy</span></div>
               <div class="rapport-zone-card"><i class="fas fa-bed rapport-zone-icon"></i><span>Crew Rest (CRC)</span></div>
               <div class="rapport-zone-card"><i class="fas fa-toilet rapport-zone-icon"></i><span>Toilettes</span></div>
               <div class="rapport-zone-card"><i class="fas fa-utensils rapport-zone-icon"></i><span>Galley / Office</span></div>
-              <div class="rapport-zone-card"><i class="fas fa-eye rapport-zone-icon"></i><span>Contrôle final / Impression</span></div>
             </div>
 
             <!-- Légende -->
@@ -791,6 +790,12 @@
               <div class="form-group">
                 <label>Nom complet *</label>
                 <input type="text" id="cieNom" placeholder="ex: Royal Air Maroc" required />
+              </div>
+              <div class="form-group">
+                <label>Logo</label>
+                <select id="cieLogo">
+                  <option value="">— Aucun —</option>
+                </select>
               </div>
               <button type="submit" class="btn btn-primary" id="btnAddCie">
                 <i class="fas fa-plus"></i> Ajouter

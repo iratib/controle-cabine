@@ -261,7 +261,7 @@ async function loadAllCompagnies() {
   if (isDemoMode) {
     allCompagnies = [{ code: 'AT', nom: 'Royal Air Maroc' }, { code: 'AF', nom: 'Air France' }];
   } else {
-    const { data } = await supabase.from('compagnies').select('code, nom').eq('actif', true).order('code');
+    const { data } = await supabase.from('compagnies').select('code, nom, logo_url').eq('actif', true).order('code');
     allCompagnies = data || [];
   }
   // Peupler le select filtre dashboard
@@ -329,15 +329,14 @@ function initDashboardFilters() {
 
 function initAnalyseFilters() {
   const now = new Date();
-  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const lastMonth = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   ['mp', 'gp'].forEach(prefix => {
     const fromEl = document.getElementById(`${prefix}FilterFrom`);
     const toEl   = document.getElementById(`${prefix}FilterTo`);
     const type   = prefix.toUpperCase();
-    if (fromEl) { fromEl.value = lastMonth; }
-    if (toEl)   { toEl.value   = lastMonth; }
+    if (fromEl) { fromEl.value = defaultMonth; }
+    if (toEl)   { toEl.value   = defaultMonth; }
     fromEl?.addEventListener('change', () => loadAnalyseType(type));
     toEl?.addEventListener('change',   () => loadAnalyseType(type));
     document.getElementById(`btnRefresh${type}`)?.addEventListener('click', () => loadAnalyseType(type));
@@ -374,11 +373,11 @@ async function loadDashboard() {
     if (el) { el.textContent = ''; el.classList.add('loading'); }
   });
   // Détruire les instances Chart.js avant rechargement
-  ['chartVolsParAgent','chartConformiteZone','chartEvolution','chartDonutConformite',
+  ['chartVolsParAgent','chartConformiteZoneMP','chartConformiteZoneGP','chartEvolution','chartDonutConformite',
    'chartControlesType','chartTypeVol','chartCompagnies'].forEach(id => _destroyChart(id));
 
   const loadingHtml = '<div class="loading-state">Chargement…</div>';
-  ['chartVolsParAgent','chartConformiteZone','chartEvolution','chartDonutConformite',
+  ['chartVolsParAgent','chartConformiteZoneMP','chartConformiteZoneGP','chartEvolution','chartDonutConformite',
    'chartControlesType','chartTypeVol','chartCompagnies','topNcList','activiteRecente'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = loadingHtml;
@@ -453,19 +452,48 @@ async function loadDashboard() {
     document.getElementById('statTaux').textContent = taux !== '—' ? taux + '%' : '—';
     document.getElementById('statNcTotal').textContent = NC;
 
-    renderChartVolsParAgent(vols);
-    renderChartZones(allControles, vols);
-    renderChartEvolution(period, fromDate, toDate, month, vols, allControles);
-    renderChartDonutConformite(C, NC);
-    renderChartControlesType(vols, allControles);
-    renderChartTypeVol(vols, allControles);
-    renderChartCompagnies(vols);
-    renderTopNC(allControles);
+    const _safe = (fn) => { try { fn(); } catch(e) { console.error('Chart render error:', e); } };
+    _safe(() => renderChartVolsParAgent(vols));
+    _safe(() => renderChartZones(allControles, vols));
+    _safe(() => renderChartEvolution(period, fromDate, toDate, month, vols, allControles));
+    _safe(() => renderChartDonutConformite(C, NC));
+    _safe(() => renderChartControlesType(vols, allControles));
+    _safe(() => renderChartTypeVol(vols, allControles));
+    _safe(() => renderChartCompagnies(vols));
+    _safe(() => renderTopNC(allControles));
     loadActiviteRecente();
     loadDashboardSla();
   } catch (err) {
     console.error('Dashboard error:', err);
   }
+}
+
+function _barLabelPlugin(id, getData) {
+  return {
+    id,
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      chart.getDatasetMeta(0).data.forEach((bar, i) => {
+        const label = getData(i);
+        if (label === null || label === undefined || label === '') return;
+        const barWidth = Math.abs(bar.x - bar.base);
+        ctx.save();
+        ctx.font = 'bold 11px Inter, sans-serif';
+        ctx.textBaseline = 'middle';
+        const textW = ctx.measureText(label).width;
+        if (barWidth >= textW + 10) {
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'right';
+          ctx.fillText(label, bar.x - 6, bar.y);
+        } else if (bar.x > bar.base) {
+          ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim() || '#64748b';
+          ctx.textAlign = 'left';
+          ctx.fillText(label, bar.x + 5, bar.y);
+        }
+        ctx.restore();
+      });
+    }
+  };
 }
 
 function renderChartVolsParAgent(vols) {
@@ -480,6 +508,7 @@ function renderChartVolsParAgent(vols) {
   const canvas = _makeCanvas(container, Math.max(160, entries.length * 42));
   _charts[container.id] = new Chart(canvas, {
     type: 'bar',
+    plugins: [_barLabelPlugin('agentLabel', i => entries[i]?.[1]?.toString())],
     data: {
       labels: entries.map(([nom]) => nom),
       datasets: [{
@@ -513,23 +542,22 @@ function renderChartVolsParAgent(vols) {
 let _zoneChartVols = [];
 let _zoneChartControles = [];
 
-function renderChartZones(controles, vols, typeFilter) {
-  // Mémoriser les données pour le re-rendu au clic des pills
-  if (vols      !== undefined) _zoneChartVols     = vols;
+function renderChartZones(controles, vols) {
+  if (vols      !== undefined) _zoneChartVols      = vols;
   if (controles !== undefined) _zoneChartControles = controles;
 
-  const filter = typeFilter !== undefined ? typeFilter
-    : (document.querySelector('#zoneTypeFilter .db-pill.active')?.dataset.zoneType ?? '');
+  _renderZoneChart('chartConformiteZoneMP', 'MP');
+  _renderZoneChart('chartConformiteZoneGP', 'GP');
+}
 
-  // Filtrer les contrôles selon le type MP / GP
-  let filteredControles = _zoneChartControles;
-  if (filter === 'MP' || filter === 'GP') {
-    const keyword = filter === 'MP' ? 'Moyen' : 'Gros';
-    const volIds = new Set(_zoneChartVols.filter(v => v.type_vol?.includes(keyword)).map(v => v.id));
-    filteredControles = _zoneChartControles.filter(c => volIds.has(c.vol_id));
-  }
+function _renderZoneChart(containerId, typeFilter) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
 
-  const container = document.getElementById('chartConformiteZone');
+  const keyword = typeFilter === 'MP' ? 'Moyen' : 'Gros';
+  const volIds = new Set(_zoneChartVols.filter(v => v.type_vol?.includes(keyword)).map(v => v.id));
+  const filteredControles = _zoneChartControles.filter(c => volIds.has(c.vol_id));
+
   const zones = ['Cockpit', 'Cabine', 'Cabine ECO', 'Toilettes', 'Galley', 'Client', 'Premium Economy', 'CRC'];
   const zoneData = {};
   zones.forEach(z => { zoneData[z] = { C: 0, NC: 0 }; });
@@ -545,11 +573,14 @@ function renderChartZones(controles, vols, typeFilter) {
     const total = d.C + d.NC;
     return total > 0 ? Math.round((d.C / total) * 100) : null;
   });
-  const bgColors = tauxArr.map(t => t === null ? 'rgba(0,0,0,.08)' : t >= 80 ? 'rgba(16,185,129,.8)' : t >= 50 ? 'rgba(245,158,11,.8)' : 'rgba(239,68,68,.8)');
+  const bgColors = tauxArr.map(t =>
+    t === null ? 'rgba(0,0,0,.08)' : t >= 80 ? 'rgba(16,185,129,.8)' : t >= 50 ? 'rgba(245,158,11,.8)' : 'rgba(239,68,68,.8)'
+  );
   const hoverColors = bgColors.map(c => c.replace(/[\d.]+\)$/, '1)'));
 
-  _charts[container.id] = new Chart(canvas, {
+  _charts[containerId] = new Chart(canvas, {
     type: 'bar',
+    plugins: [_barLabelPlugin('zoneLabel_' + containerId, i => tauxArr[i] !== null ? tauxArr[i] + '%' : null)],
     data: {
       labels: zones,
       datasets: [{
@@ -581,15 +612,6 @@ function renderChartZones(controles, vols, typeFilter) {
         y: { grid: { display: false } }
       }
     }
-  });
-
-  // Câbler les pills (onclick remplace à chaque appel)
-  document.querySelectorAll('#zoneTypeFilter .db-pill').forEach(p => {
-    p.onclick = () => {
-      document.querySelectorAll('#zoneTypeFilter .db-pill').forEach(x => x.classList.remove('active'));
-      p.classList.add('active');
-      renderChartZones(undefined, undefined, p.dataset.zoneType);
-    };
   });
 }
 
@@ -765,9 +787,31 @@ function renderChartDonutConformite(C, NC) {
   if (!container) return;
   const total = C + NC;
   if (!total) { container.innerHTML = '<div class="empty-state">Aucune donnée</div>'; return; }
+
+  const pctC = (C / total * 100).toFixed(1);
+  const centerTextPlugin = {
+    id: 'donutCenter',
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea: { top, bottom, left, right } } = chart;
+      const cx = (left + right) / 2;
+      const cy = (top + bottom) / 2;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = 'bold 20px Inter, sans-serif';
+      ctx.fillStyle = '#10b981';
+      ctx.fillText(pctC + '%', cx, cy - 8);
+      ctx.font = '11px Inter, sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('Conformes', cx, cy + 10);
+      ctx.restore();
+    }
+  };
+
   const canvas = _makeCanvas(container, 220);
   _charts[container.id] = new Chart(canvas, {
     type: 'doughnut',
+    plugins: [centerTextPlugin],
     data: {
       labels: ['Conforme', 'Non conforme'],
       datasets: [{
@@ -781,11 +825,11 @@ function renderChartDonutConformite(C, NC) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      cutout: '65%',
+      cutout: '68%',
       plugins: {
         legend: {
-          position: 'right',
-          labels: { usePointStyle: true, pointStyle: 'circle', padding: 14, font: { size: 12 } }
+          position: 'bottom',
+          labels: { usePointStyle: true, pointStyle: 'circle', padding: 12, font: { size: 11 } }
         },
         tooltip: {
           callbacks: {
@@ -826,16 +870,18 @@ function renderChartControlesType(vols, controles) {
     else if (c.conformite === 'NC') data[t].NC++;
   });
 
+  const ctrlTaux = TYPES.map(t => {
+    const d = data[t.key];
+    return (d.C + d.NC) > 0 ? Math.round(d.C / (d.C + d.NC) * 100) : null;
+  });
   const canvas = _makeCanvas(container, 200);
   _charts[container.id] = new Chart(canvas, {
     type: 'bar',
+    plugins: [_barLabelPlugin('ctrlTypeLabel', i => ctrlTaux[i] !== null ? ctrlTaux[i] + '%' : null)],
     data: {
       labels: TYPES.map(t => t.label),
       datasets: [{
-        data: TYPES.map(t => {
-          const d = data[t.key];
-          return (d.C + d.NC) > 0 ? Math.round(d.C / (d.C + d.NC) * 100) : 0;
-        }),
+        data: ctrlTaux.map(t => t ?? 0),
         backgroundColor: TYPES.map(t => t.color + 'cc'),
         hoverBackgroundColor: TYPES.map(t => t.color),
         borderRadius: 5,
@@ -853,7 +899,7 @@ function renderChartControlesType(vols, controles) {
             label: ctx => {
               const t = TYPES[ctx.dataIndex];
               const d = data[t.key];
-              const taux = (d.C + d.NC) > 0 ? ctx.parsed.x + '%' : '—';
+              const taux = ctrlTaux[ctx.dataIndex] !== null ? ctrlTaux[ctx.dataIndex] + '%' : '—';
               return ` ${taux}  (${d.vols} vol${d.vols !== 1 ? 's' : ''} · ${d.ctrl} pts)`;
             }
           }
@@ -880,17 +926,19 @@ function renderChartTypeVol(vols, controles) {
   const hasData  = Object.values(data).some(d => d.vols > 0);
   if (!hasData) { container.innerHTML = '<div class="empty-state">Aucune donnée</div>'; return; }
   const labels = Object.keys(data);
+  const typeVolTaux = labels.map(g => {
+    const d = data[g];
+    const total = d.C + d.NC;
+    return total > 0 ? Math.round(d.C / total * 100) : null;
+  });
   const canvas = _makeCanvas(container, 140);
   _charts[container.id] = new Chart(canvas, {
     type: 'bar',
+    plugins: [_barLabelPlugin('typeVolLabel', i => typeVolTaux[i] !== null ? typeVolTaux[i] + '%' : null)],
     data: {
       labels,
       datasets: [{
-        data: labels.map(g => {
-          const d = data[g];
-          const total = d.C + d.NC;
-          return total > 0 ? Math.round(d.C / total * 100) : 0;
-        }),
+        data: typeVolTaux.map(t => t ?? 0),
         backgroundColor: labels.map(g => colorMap[g] + 'cc'),
         hoverBackgroundColor: labels.map(g => colorMap[g]),
         borderRadius: 5,
@@ -923,6 +971,8 @@ function renderChartTypeVol(vols, controles) {
 function renderChartCompagnies(vols) {
   const container = document.getElementById('chartCompagnies');
   if (!container) return;
+
+  const cieMap = Object.fromEntries(allCompagnies.map(c => [c.code, c]));
   const validCodes = new Set(allCompagnies.map(c => c.code));
   const counts = {};
   vols.forEach(v => {
@@ -931,38 +981,31 @@ function renderChartCompagnies(vols) {
   });
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   if (!entries.length) { container.innerHTML = '<div class="empty-state">Aucune donnée</div>'; return; }
-  const canvas = _makeCanvas(container, Math.max(140, entries.length * 38));
-  const palette = ['#6366f1','#3b82f6','#8b5cf6','#06b6d4','#f59e0b','#10b981','#e57282'];
-  _charts[container.id] = new Chart(canvas, {
-    type: 'bar',
-    data: {
-      labels: entries.map(([cie]) => cie),
-      datasets: [{
-        data: entries.map(([, c]) => c),
-        backgroundColor: entries.map((_, i) => palette[i % palette.length] + 'cc'),
-        hoverBackgroundColor: entries.map((_, i) => palette[i % palette.length]),
-        borderRadius: 5,
-        borderSkipped: false,
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: ctx => ` ${ctx.parsed.x} vol${ctx.parsed.x > 1 ? 's' : ''}`
-          }
-        }
-      },
-      scales: {
-        x: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: 'rgba(0,0,0,.05)' } },
-        y: { grid: { display: false } }
-      }
-    }
-  });
+
+  const maxCount = entries[0][1];
+  container.innerHTML = `
+    <div class="cie-cards-grid">
+      ${entries.map(([code, count]) => {
+        const cie = cieMap[code] || { code, nom: code, logo_url: null };
+        const pct = Math.round(count / maxCount * 100);
+        const logoHtml = cie.logo_url
+          ? `<img src="cieslogs/${cie.logo_url}" alt="${cie.code}"
+                  onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+          : '';
+        return `
+          <div class="cie-vol-card">
+            <div class="cie-vol-logo">
+              ${logoHtml}
+              <span class="cie-vol-initials" style="${cie.logo_url ? 'display:none' : ''}">${cie.code}</span>
+            </div>
+            <div class="cie-vol-info">
+              <div class="cie-vol-name">${cie.nom || cie.code}</div>
+              <div class="cie-vol-count">${count} vol${count > 1 ? 's' : ''}</div>
+              <div class="cie-vol-bar-track"><div class="cie-vol-bar-fill" style="width:${pct}%"></div></div>
+            </div>
+          </div>`;
+      }).join('')}
+    </div>`;
 }
 
 async function loadActiviteRecente() {
@@ -1864,9 +1907,8 @@ async function loadAnalyseType(type) {
   // Lire le filtre De/À
   const fromSel  = document.getElementById(isMP ? 'mpFilterFrom' : 'gpFilterFrom');
   const toSel    = document.getElementById(isMP ? 'mpFilterTo'   : 'gpFilterTo');
-  const now      = new Date();
-  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const defaultMonth = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2,'0')}`;
+  const now          = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}`;
   const fromDate = monthToRange(fromSel?.value || defaultMonth).first;
   const toDate   = monthToRange(toSel?.value   || defaultMonth).last;
 
@@ -1945,7 +1987,7 @@ async function loadAnalyseType(type) {
 
     const structs    = typeVolValues.flatMap(t => FICHE_STRUCTURES[t] || []);
     const ZONE_CANON = { 'Cabine ECO': 'Cabine', 'CRC': 'Cabine', 'Premium Economy': 'Cabine' };
-    const canonicalZones = new Set(structs.map(s => ZONE_CANON[s.zone] || s.zone));
+    const canonicalZones = new Set(structs.map(s => ZONE_CANON[s.zone] || s.zone).filter(z => z !== 'Client'));
     const uniqueZones = [...new Set(structs.map(s => s.zone))];
 
 
@@ -2849,10 +2891,32 @@ function renderPartieClient(type, vols, controles) {
 
 async function loadCompagniesView() {
   renderCieList();
+  fetchLogoOptions().then(files => {
+    const sel = document.getElementById('cieLogo');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— Aucun —</option>'
+      + files.map(f => `<option value="${f}">${f}</option>`).join('');
+  });
   document.getElementById('formAddCie')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     await addCompagnie();
   });
+}
+
+async function fetchLogoOptions() {
+  const FALLBACK = ['AF.png','EK.png','EY.png','GF.png','QR.png','rj.png','SV.jpeg','TK.png','ku.png','logoRAM.jpg'];
+  try {
+    const res = await fetch('/cieslogs/', { headers: { Accept: 'application/json' } });
+    if (res.ok) {
+      const json = await res.json();
+      const files = (json.files || [])
+        .filter(f => f.type === 'file' && /\.(png|jpe?g|svg|webp)$/i.test(f.name))
+        .map(f => f.name)
+        .sort((a, b) => a.localeCompare(b));
+      if (files.length) return files;
+    }
+  } catch (_) {}
+  return FALLBACK;
 }
 
 async function renderCieList() {
@@ -2867,7 +2931,7 @@ async function renderCieList() {
       { id: '2', code: 'AF', nom: 'Air France',      actif: true },
     ];
   } else {
-    const { data, error } = await supabase.from('compagnies').select('*').order('code');
+    const { data, error } = await supabase.from('compagnies').select('id, code, nom, logo_url, actif').order('code');
     if (error) { content.innerHTML = `<div class="empty-state">Erreur : ${error.message}</div>`; return; }
     rows = data || [];
   }
@@ -2879,20 +2943,30 @@ async function renderCieList() {
     return;
   }
 
+  const LOGO_OPTIONS = await fetchLogoOptions();
   content.innerHTML = `
     <table class="data-table">
       <thead><tr>
-        <th>Code</th><th>Nom complet</th><th style="text-align:center">Statut</th><th style="text-align:center">Actions</th>
+        <th>Logo</th><th>Code</th><th>Nom complet</th><th style="text-align:center">Statut</th><th style="text-align:center">Actions</th>
       </tr></thead>
       <tbody>
         ${rows.map(r => `
           <tr>
+            <td>
+              ${r.logo_url
+                ? `<img src="cieslogs/${r.logo_url}" alt="${r.code}" class="cie-table-logo">`
+                : `<span class="cie-vol-initials cie-initials-sm">${r.code}</span>`}
+            </td>
             <td><span class="cie-code-badge">${r.code}</span></td>
             <td>${r.nom}</td>
             <td style="text-align:center">
               <span class="badge ${r.actif ? 'badge-ok' : 'badge-off'}">${r.actif ? 'Actif' : 'Inactif'}</span>
             </td>
-            <td style="text-align:center">
+            <td style="text-align:center;white-space:nowrap">
+              <select class="cie-logo-select" data-id="${r.id}" title="Changer le logo">
+                <option value="">— Logo —</option>
+                ${LOGO_OPTIONS.map(f => `<option value="${f}" ${r.logo_url === f ? 'selected' : ''}>${f}</option>`).join('')}
+              </select>
               <button class="btn btn-outline btn-xs" onclick="toggleCie('${r.id}', ${r.actif})">
                 <i class="fas fa-${r.actif ? 'ban' : 'check'}"></i> ${r.actif ? 'Désactiver' : 'Activer'}
               </button>
@@ -2903,24 +2977,39 @@ async function renderCieList() {
           </tr>`).join('')}
       </tbody>
     </table>`;
+
+  content.querySelectorAll('.cie-logo-select').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const id = sel.dataset.id;
+      const logo = sel.value;
+      if (!isDemoMode) {
+        const { error } = await supabase.from('compagnies').update({ logo_url: logo || null }).eq('id', id);
+        if (error) { showToast(error.message, 'error'); return; }
+      }
+      showToast('Logo mis à jour.', 'success');
+      renderCieList();
+    });
+  });
 }
 
 async function addCompagnie() {
-  const code = document.getElementById('cieCode').value.trim().toUpperCase();
-  const nom  = document.getElementById('cieNom').value.trim();
-  const btn  = document.getElementById('btnAddCie');
+  const code  = document.getElementById('cieCode').value.trim().toUpperCase();
+  const nom   = document.getElementById('cieNom').value.trim();
+  const logo  = document.getElementById('cieLogo')?.value || null;
+  const btn   = document.getElementById('btnAddCie');
   if (!code || !nom) return;
 
   btn.disabled = true;
   if (!isDemoMode) {
-    const { error } = await supabase.from('compagnies').insert({ code, nom, actif: true });
+    const { error } = await supabase.from('compagnies').insert({ code, nom, logo_url: logo || null, actif: true });
     if (error) {
       showToast(error.message.includes('unique') ? `Le code "${code}" existe déjà.` : error.message, 'error');
       btn.disabled = false; return;
     }
   }
-  document.getElementById('cieCode').value = '';
-  document.getElementById('cieNom').value  = '';
+  document.getElementById('cieCode').value  = '';
+  document.getElementById('cieNom').value   = '';
+  if (document.getElementById('cieLogo')) document.getElementById('cieLogo').value = '';
   btn.disabled = false;
   showToast(`Compagnie "${code}" ajoutée.`, 'success');
   renderCieList();
@@ -3551,7 +3640,7 @@ async function loadDashboardSla() {
     while (true) {
       const { data: pg } = await supabase
         .from('vols')
-        .select('type_vol, heure_debut, heure_fin')
+        .select('type_vol, heure_debut, heure_fin, materiels_utilises(categorie, quantite)')
         .in('statut', ['soumis', 'validé', 'rejeté'])
         .order('date_vol')
         .range(off, off + 999);
@@ -3561,77 +3650,130 @@ async function loadDashboardSla() {
       off += 1000;
     }
     vols = all;
-    // Charger la config SLA si pas encore en cache
     if (Object.keys(slaConfigCache).length === 0) {
       const { data } = await supabase.from('sla_config').select('*');
       (data || []).forEach(r => { slaConfigCache[r.type_vol] = r; });
     }
   }
 
-  const groups = {
-    transit: {
-      label: 'Transit',
-      mp: { key: 'Moyen Porteur Transit', total: 0, dans: 0 },
-      gp: { key: 'Gros Porteur Transit',  total: 0, dans: 0 },
-      total: 0, dans: 0,
-    },
-    stop: {
-      label: 'Stop CMN',
-      mp: { key: 'Moyen Porteur Stop Cmn', total: 0, dans: 0 },
-      gp: { key: 'Gros Porteur Stop Cmn',  total: 0, dans: 0 },
-      total: 0, dans: 0,
-    },
-  };
+  // 4 types de vol
+  const TYPES = [
+    { key: 'Moyen Porteur Transit',  label: 'MP Transit',  anchor: 'transit' },
+    { key: 'Gros Porteur Transit',   label: 'GP Transit',  anchor: 'transit' },
+    { key: 'Moyen Porteur Stop Cmn', label: 'MP Stop CMN', anchor: 'stop'    },
+    { key: 'Gros Porteur Stop Cmn',  label: 'GP Stop CMN', anchor: 'stop'    },
+  ];
 
-  vols.forEach(v => {
-    if (!v.heure_debut || !v.heure_fin) return;
-    let grp = null, sub = null;
-    for (const g of Object.values(groups)) {
-      if (v.type_vol === g.mp.key) { grp = g; sub = g.mp; break; }
-      if (v.type_vol === g.gp.key) { grp = g; sub = g.gp; break; }
-    }
-    if (!grp) return;
-    const [hd, md] = v.heure_debut.split(':').map(Number);
-    const [hf, mf] = v.heure_fin.split(':').map(Number);
-    let duree = (hf * 60 + mf) - (hd * 60 + md);
-    if (duree < 0) duree += 1440;
-    const sla = getSlaForBroadType(v.type_vol);
-    const ok = duree <= sla ? 1 : 0;
-    grp.total++; grp.dans += ok;
-    sub.total++; sub.dans += ok;
+  // Initialiser les stats pour les deux critères
+  const sT = {}, sA = {};
+  TYPES.forEach(t => {
+    sT[t.key] = { total: 0, avecInfo: 0, dans: 0 };
+    sA[t.key] = { total: 0, avecInfo: 0, dans: 0 };
   });
 
-  const totalAll = groups.transit.total + groups.stop.total;
-  const dansAll  = groups.transit.dans  + groups.stop.dans;
-  const tauxAll  = totalAll > 0 ? (dansAll / totalAll * 100).toFixed(1) : null;
-  const colorAll = tauxAll === null ? '#94a3b8' : tauxAll >= 90 ? '#22c55e' : tauxAll >= 70 ? '#f59e0b' : '#ef4444';
+  vols.forEach(v => {
+    const type = TYPES.find(t => t.key === v.type_vol);
+    if (!type) return;
 
-  const kpiCards = Object.entries(groups).map(([type, g]) => {
+    // Critère temps
+    sT[v.type_vol].total++;
+    if (v.heure_debut && v.heure_fin) {
+      const [hd, md] = v.heure_debut.split(':').map(Number);
+      const [hf, mf] = v.heure_fin.split(':').map(Number);
+      let duree = (hf * 60 + mf) - (hd * 60 + md);
+      if (duree < 0) duree += 1440;
+      sT[v.type_vol].avecInfo++;
+      if (duree <= getSlaForBroadType(v.type_vol)) sT[v.type_vol].dans++;
+    }
+
+    // Critère agents
+    sA[v.type_vol].total++;
+    const matEntry = (v.materiels_utilises || []).find(m => m.categorie === 'Nombre agents');
+    if (matEntry !== undefined) {
+      const agentsReq = slaConfigCache[v.type_vol]?.nb_agents_nettoyage ?? 0;
+      sA[v.type_vol].avecInfo++;
+      if ((matEntry.quantite ?? 0) >= agentsReq) sA[v.type_vol].dans++;
+    }
+  });
+
+  // ---- Cartes résumé (Transit / Stop CMN / Global) ----
+  const grp = {
+    transit: { label: 'Transit',  icon: 'fa-gauge-high', mp: TYPES[0], gp: TYPES[1], total: 0, dans: 0, mpD: 0, mpT: 0, gpD: 0, gpT: 0 },
+    stop:    { label: 'Stop CMN', icon: 'fa-circle-stop', mp: TYPES[2], gp: TYPES[3], total: 0, dans: 0, mpD: 0, mpT: 0, gpD: 0, gpT: 0 },
+  };
+  Object.values(grp).forEach(g => {
+    [g.mp, g.gp].forEach(t => {
+      const s = sT[t.key];
+      g.total += s.avecInfo; g.dans += s.dans;
+      if (t === g.mp) { g.mpD += s.dans; g.mpT += s.avecInfo; }
+      else            { g.gpD += s.dans; g.gpT += s.avecInfo; }
+    });
+  });
+  const totalAll = grp.transit.total + grp.stop.total;
+  const dansAll  = grp.transit.dans  + grp.stop.dans;
+  const tauxAll  = totalAll > 0 ? (dansAll / totalAll * 100).toFixed(1) : null;
+  const colorAll = tauxAll === null ? '#94a3b8' : parseFloat(tauxAll) >= 90 ? '#22c55e' : parseFloat(tauxAll) >= 70 ? '#f59e0b' : '#ef4444';
+
+  const summaryCards = Object.entries(grp).map(([type, g]) => {
     const taux  = g.total > 0 ? (g.dans / g.total * 100).toFixed(1) : null;
-    const color = taux === null ? '#94a3b8' : taux >= 90 ? '#22c55e' : taux >= 70 ? '#f59e0b' : '#ef4444';
-    const icon  = type === 'transit' ? 'fa-gauge-high' : 'fa-circle-stop';
+    const color = taux === null ? '#94a3b8' : parseFloat(taux) >= 90 ? '#22c55e' : parseFloat(taux) >= 70 ? '#f59e0b' : '#ef4444';
     return `
       <div class="sla-db-kpi">
-        <div class="sla-db-kpi-label"><i class="fas ${icon}"></i> ${g.label}</div>
+        <div class="sla-db-kpi-label"><i class="fas ${g.icon}"></i> ${g.label}</div>
         <div class="sla-db-kpi-value" style="color:${color}">${taux !== null ? taux + '%' : '—'}</div>
         <div class="sla-db-kpi-sub">${g.dans} / ${g.total} vols</div>
         <div class="sla-db-kpi-breakdown">
-          <span class="badge-mp"><i class="fas fa-plane-departure"></i> MP&nbsp;${g.mp.dans}/${g.mp.total}</span>
-          <span class="badge-gp"><i class="fas fa-plane"></i> GP&nbsp;${g.gp.dans}/${g.gp.total}</span>
+          <span class="badge-mp"><i class="fas fa-plane-departure"></i> MP&nbsp;${g.mpD}/${g.mpT}</span>
+          <span class="badge-gp"><i class="fas fa-plane"></i> GP&nbsp;${g.gpD}/${g.gpT}</span>
         </div>
         <a href="#" class="sla-db-link" data-anchor="${type}">Voir détail →</a>
       </div>`;
   }).join('');
 
+  const globalCard = `
+    <div class="sla-db-kpi sla-db-kpi-global">
+      <div class="sla-db-kpi-label"><i class="fas fa-chart-pie"></i> Global</div>
+      <div class="sla-db-kpi-value" style="color:${colorAll}">${tauxAll !== null ? tauxAll + '%' : '—'}</div>
+      <div class="sla-db-kpi-sub">${dansAll} / ${totalAll} vols</div>
+      <a href="#" class="sla-db-link" data-anchor="">Voir tout →</a>
+    </div>`;
+
+  // ---- Cartes détaillées (8 cartes : 4 types × 2 critères) ----
+  const renderDetailCard = (t, stats, anchor) => {
+    const s = stats[t.key];
+    const taux  = s.avecInfo > 0 ? (s.dans / s.avecInfo * 100).toFixed(1) : null;
+    const color = taux === null ? '#94a3b8' : parseFloat(taux) >= 90 ? '#22c55e' : parseFloat(taux) >= 70 ? '#f59e0b' : '#ef4444';
+    return `
+      <div class="sla-db-kpi">
+        <div class="sla-db-kpi-label">${t.label}</div>
+        <div class="sla-db-kpi-value" style="color:${color}">${taux !== null ? taux + '%' : '—'}</div>
+        <div class="sla-db-kpi-sub">${s.dans} / ${s.avecInfo} vols analysés</div>
+        <a href="#" class="sla-db-link" data-anchor="${anchor}">Détail →</a>
+      </div>`;
+  };
+
   content.innerHTML = `
     <div class="sla-db-grid">
-      ${kpiCards}
-      <div class="sla-db-kpi sla-db-kpi-global">
-        <div class="sla-db-kpi-label"><i class="fas fa-chart-pie"></i> Global</div>
-        <div class="sla-db-kpi-value" style="color:${colorAll}">${tauxAll !== null ? tauxAll + '%' : '—'}</div>
-        <div class="sla-db-kpi-sub">${dansAll} / ${totalAll} vols</div>
-        <a href="#" class="sla-db-link" data-anchor="">Voir tout →</a>
+      ${summaryCards}
+      ${globalCard}
+    </div>
+    <div class="sla-db-separator"></div>
+    <div class="sla-db-global-grid">
+      <div class="sla-db-critere-section">
+        <div class="sla-db-critere-title"><i class="fas fa-clock"></i> Temps de traitement</div>
+        <div class="sla-db-row">
+          ${TYPES.map(t => renderDetailCard(t, sT, t.anchor)).join('')}
+        </div>
       </div>
+      <div class="sla-db-critere-section">
+        <div class="sla-db-critere-title"><i class="fas fa-users"></i> Effectif agents</div>
+        <div class="sla-db-row">
+          ${TYPES.map(t => renderDetailCard(t, sA, t.anchor)).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="sla-db-footer">
+      <a href="#" class="sla-db-link" data-anchor="">Voir Conformité SLA →</a>
     </div>`;
 
   content.querySelectorAll('.sla-db-link').forEach(a => {
