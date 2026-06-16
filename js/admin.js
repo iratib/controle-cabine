@@ -3721,16 +3721,15 @@ async function loadSlaStats(typeFilter, suffix, critere = 'temps') {
 
 // ---- WIDGET SLA GLOBAL (Dashboard) ----
 
-function _renderSlaWidget(vols, containerId) {
-  const content = document.getElementById(containerId);
-  if (!content) return;
+const SLA_TYPES = [
+  { key: 'Moyen Porteur Transit',  label: 'MP Transit',  anchor: 'transit' },
+  { key: 'Gros Porteur Transit',   label: 'GP Transit',  anchor: 'transit' },
+  { key: 'Moyen Porteur Stop Cmn', label: 'MP Stop CMN', anchor: 'stop'    },
+  { key: 'Gros Porteur Stop Cmn',  label: 'GP Stop CMN', anchor: 'stop'    },
+];
 
-  const TYPES = [
-    { key: 'Moyen Porteur Transit',  label: 'MP Transit',  anchor: 'transit' },
-    { key: 'Gros Porteur Transit',   label: 'GP Transit',  anchor: 'transit' },
-    { key: 'Moyen Porteur Stop Cmn', label: 'MP Stop CMN', anchor: 'stop'    },
-    { key: 'Gros Porteur Stop Cmn',  label: 'GP Stop CMN', anchor: 'stop'    },
-  ];
+function _computeSlaStats(vols) {
+  const TYPES = SLA_TYPES;
 
   // Initialiser les stats pour les deux critères
   const sT = {}, sA = {};
@@ -3780,7 +3779,49 @@ function _renderSlaWidget(vols, containerId) {
   const totalAll = grp.transit.total + grp.stop.total;
   const dansAll  = grp.transit.dans  + grp.stop.dans;
   const tauxAll  = totalAll > 0 ? (dansAll / totalAll * 100).toFixed(1) : null;
-  const colorAll = tauxAll === null ? '#94a3b8' : parseFloat(tauxAll) >= 90 ? '#22c55e' : parseFloat(tauxAll) >= 70 ? '#f59e0b' : '#ef4444';
+
+  return { sT, sA, grp, totalAll, dansAll, tauxAll };
+}
+
+function _slaColor(taux) {
+  return taux === null ? '#94a3b8' : parseFloat(taux) >= 90 ? '#22c55e' : parseFloat(taux) >= 70 ? '#f59e0b' : '#ef4444';
+}
+
+// Mini-résumé compact (vue globale toutes périodes) — placé entre les filtres et le widget filtré
+function _renderSlaGlobalMini(vols, containerId) {
+  const content = document.getElementById(containerId);
+  if (!content) return;
+  const { grp, totalAll, dansAll, tauxAll } = _computeSlaStats(vols);
+  const colorAll = _slaColor(tauxAll);
+
+  const chip = (label, icon, g) => {
+    const taux = g.total > 0 ? (g.dans / g.total * 100).toFixed(1) : null;
+    return `
+      <div class="sla-mini-chip">
+        <span class="sla-mini-chip-label"><i class="fas ${icon}"></i> ${label}</span>
+        <span class="sla-mini-chip-value" style="color:${_slaColor(taux)}">${taux !== null ? taux + '%' : '—'}</span>
+      </div>`;
+  };
+
+  content.innerHTML = `
+    <span class="sla-mini-note">Toutes périodes confondues —</span>
+    <div class="sla-mini-chip sla-mini-chip-global">
+      <span class="sla-mini-chip-label"><i class="fas fa-chart-pie"></i> Global</span>
+      <span class="sla-mini-chip-value" style="color:${colorAll}">${tauxAll !== null ? tauxAll + '%' : '—'}</span>
+      <span class="sla-mini-chip-sub">${dansAll}/${totalAll} vols</span>
+    </div>
+    ${chip('Transit', 'fa-gauge-high', grp.transit)}
+    ${chip('Stop CMN', 'fa-circle-stop', grp.stop)}
+  `;
+}
+
+function _renderSlaWidget(vols, containerId) {
+  const content = document.getElementById(containerId);
+  if (!content) return;
+
+  const TYPES = SLA_TYPES;
+  const { sT, sA, grp, totalAll, dansAll, tauxAll } = _computeSlaStats(vols);
+  const colorAll = _slaColor(tauxAll);
 
   const summaryCards = Object.entries(grp).map(([type, g]) => {
     const taux  = g.total > 0 ? (g.dans / g.total * 100).toFixed(1) : null;
@@ -3859,7 +3900,7 @@ function _renderSlaWidget(vols, containerId) {
 }
 
 async function loadDashboardSla() {
-  const content = document.getElementById('slaGlobalContent');
+  const content = document.getElementById('slaGlobalMini');
   if (!content) return;
 
   let vols = [];
@@ -3886,7 +3927,7 @@ async function loadDashboardSla() {
       (data || []).forEach(r => { slaConfigCache[r.type_vol] = r; });
     }
   }
-  _renderSlaWidget(vols, 'slaGlobalContent');
+  _renderSlaGlobalMini(vols, 'slaGlobalMini');
 }
 
 async function loadDashboardSlaFiltered(volIds) {

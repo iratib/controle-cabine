@@ -3408,6 +3408,52 @@ input, select, textarea { font-family: var(--font); }
 
 .sla-db-link:hover { text-decoration: underline; }
 
+/* Mini-résumé SLA global (compact, non filtré) */
+.sla-mini-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .75rem;
+  padding: .6rem .9rem;
+  margin-bottom: 1rem;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+.sla-mini-note {
+  font-size: .75rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  white-space: nowrap;
+}
+.sla-mini-chip {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .3rem .7rem;
+  border-radius: 99px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.sla-mini-chip-global { border-color: var(--ram-red); background: rgba(227,24,55,.05); }
+.sla-mini-chip-label {
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.sla-mini-chip-value {
+  font-family: var(--font-title);
+  font-size: .9rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.sla-mini-chip-sub {
+  font-size: .68rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 /* ---- SLA CATEGORIES TRANSIT ---- */
 .sla-cat-grid {
   display: grid;
