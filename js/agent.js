@@ -8,7 +8,8 @@ import { showToast, formatDate, getStatutBadge, formatRelativeTime } from './uti
 import { initTheme } from './theme.js';
 import {
   demoCreateVol, demoGetVols, demoGetVol,
-  demoGetControles, demoUpsertControle, demoUpdateVol
+  demoGetControles, demoUpsertControle, demoUpdateVol,
+  demoGetAllControles, demoGetAgents
 } from './demo-db.js';
 
 // ---- DONNÉES DE RÉFÉRENCE : FICHES PAR TYPE DE VOL ----
@@ -385,6 +386,8 @@ async function init() {
   loadMesControles();
   updateBadgeEnCours();
   setupNotifications();
+  setupVolEnCoursModal();
+  checkVolEnCours();
 
   // Sidebar mobile
   document.getElementById('btnMenu').addEventListener('click', () => {
@@ -476,6 +479,9 @@ function showView(viewName) {
   } else if (viewName === 'sla') {
     document.getElementById('viewSla').style.display = 'block';
     loadAgentSlaView();
+  } else if (viewName === 'realisations') {
+    document.getElementById('viewRealisations').style.display = 'block';
+    loadRealisations();
   }
 }
 
@@ -2204,6 +2210,219 @@ async function updateBadgeEnCours() {
   } else {
     enCoursTotal = 0;
     badge.style.display = 'none';
+  }
+}
+
+// ---- VOL EN COURS NON TERMINÉ (rappel au login) ----
+
+let _volEnCoursPending = null;
+
+async function checkVolEnCours() {
+  let vols = [];
+  try {
+    if (isDemoMode) {
+      vols = demoGetVols(currentUser.id).filter(v => v.statut === 'en_cours');
+    } else {
+      const { data, error } = await supabase
+        .from('vols')
+        .select('id, numero_vol, type_vol, created_at')
+        .eq('agent_id', currentUser.id)
+        .eq('statut', 'en_cours')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      vols = data || [];
+    }
+  } catch (err) {
+    console.error(err);
+    return;
+  }
+  if (!vols.length) return;
+
+  _volEnCoursPending = vols[0];
+  document.getElementById('encoursVolNumero').textContent = _volEnCoursPending.numero_vol;
+  const autresEl = document.getElementById('encoursVolAutres');
+  if (vols.length > 1) {
+    autresEl.textContent = `Vous avez ${vols.length} contrôles en cours au total — gérez les autres depuis "Mes contrôles".`;
+    autresEl.style.display = 'block';
+  } else {
+    autresEl.style.display = 'none';
+  }
+  document.getElementById('modalVolEnCours').style.display = 'flex';
+}
+
+function setupVolEnCoursModal() {
+  document.getElementById('btnContinuerVolEnCours')?.addEventListener('click', () => {
+    if (!_volEnCoursPending) return;
+    document.getElementById('modalVolEnCours').style.display = 'none';
+    window.continueFiche(_volEnCoursPending.id);
+    _volEnCoursPending = null;
+  });
+  document.getElementById('btnSupprimerVolEnCours')?.addEventListener('click', () => {
+    if (!_volEnCoursPending) return;
+    document.getElementById('modalVolEnCours').style.display = 'none';
+    window.confirmDeleteVol(_volEnCoursPending.id, _volEnCoursPending.numero_vol);
+    _volEnCoursPending = null;
+  });
+  document.getElementById('btnPlusTardVolEnCours')?.addEventListener('click', () => {
+    document.getElementById('modalVolEnCours').style.display = 'none';
+    _volEnCoursPending = null;
+  });
+}
+
+// ---- RÉALISATIONS ----
+
+function _renderRankList(containerId, rows, valueKey, valueSuffix = '') {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = rows.length
+    ? rows.map((a, i) => {
+        const isMe = a.agent_id === currentUser.id;
+        return `
+          <div class="realisation-rank-row ${isMe ? 'realisation-me' : ''}">
+            <span class="realisation-rank">${i + 1}</span>
+            <span class="realisation-rank-name">${a.nom}${isMe ? ' <span class="badge-stat">Vous</span>' : ''}</span>
+            <span class="realisation-rank-value">${a[valueKey]}${valueSuffix}</span>
+          </div>`;
+      }).join('')
+    : '<div class="empty-state">Aucune donnée.</div>';
+}
+
+async function loadRealisations() {
+  const kpiGrid = document.getElementById('realisationsKpiGrid');
+  const typeContainer = document.getElementById('realisationsParType');
+  if (!kpiGrid || !typeContainer) return;
+
+  kpiGrid.innerHTML = '<div class="loading-state">Chargement…</div>';
+  typeContainer.innerHTML = '<div class="loading-state">Chargement…</div>';
+  ['classementGpVolume', 'classementGpNc', 'classementMpVolume', 'classementMpNc'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<div class="loading-state">Chargement…</div>';
+  });
+
+  try {
+    let ownVols = [];
+    let ownControles = [];
+    let classementParType = []; // [{ agent_id, nom, matricule, categorie: 'GP'|'MP', total_vols, total_c, total_nc, taux }]
+
+    if (isDemoMode) {
+      ownVols = demoGetVols('demo').filter(v => v.statut === 'soumis');
+      const ownIds = new Set(ownVols.map(v => v.id));
+      ownControles = demoGetAllControles().filter(c => ownIds.has(c.vol_id));
+
+      const allVols = demoGetVols().filter(v => v.statut === 'soumis');
+      const allControles = demoGetAllControles();
+      const agentsMap = new Map(demoGetAgents().map(a => [a.id, a]));
+      agentsMap.set('demo', { id: 'demo', nom: currentUser?.nom || 'Agent Démo', matricule: currentUser?.matricule || '—' });
+
+      const volById = new Map(allVols.map(v => [v.id, v]));
+      const byAgentType = {};
+      allVols.forEach(v => {
+        const cat = v.type_vol?.startsWith('Gros Porteur') ? 'GP' : 'MP';
+        const key = v.agent_id + '|' + cat;
+        (byAgentType[key] ||= { agent_id: v.agent_id, categorie: cat, vols: 0, c: 0, nc: 0 }).vols++;
+      });
+      allControles.forEach(c => {
+        const vol = volById.get(c.vol_id);
+        if (!vol) return;
+        const cat = vol.type_vol?.startsWith('Gros Porteur') ? 'GP' : 'MP';
+        const key = vol.agent_id + '|' + cat;
+        if (!byAgentType[key]) return;
+        if (c.conformite === 'C') byAgentType[key].c++;
+        else if (c.conformite === 'NC') byAgentType[key].nc++;
+      });
+      classementParType = Object.values(byAgentType).map(s => {
+        const a = agentsMap.get(s.agent_id) || { nom: 'Agent inconnu', matricule: '—' };
+        const total = s.c + s.nc;
+        return {
+          agent_id: s.agent_id, nom: a.nom, matricule: a.matricule, categorie: s.categorie,
+          total_vols: s.vols, total_c: s.c, total_nc: s.nc,
+          taux: total > 0 ? Math.round((s.c / total) * 1000) / 10 : null
+        };
+      });
+    } else {
+      const { data: ov, error: ovErr } = await supabase
+        .from('vols')
+        .select('id, type_vol, statut')
+        .eq('agent_id', currentUser.id)
+        .eq('statut', 'soumis');
+      if (ovErr) throw ovErr;
+      ownVols = ov || [];
+
+      if (ownVols.length) {
+        const ids = ownVols.map(v => v.id);
+        const CHUNK = 100;
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          const { data: cData, error: cErr } = await supabase
+            .from('controles')
+            .select('vol_id, conformite')
+            .in('vol_id', ids.slice(i, i + CHUNK));
+          if (cErr) throw cErr;
+          ownControles.push(...(cData || []));
+        }
+      }
+
+      const { data: classData, error: classErr } = await supabase.rpc('classement_agents_par_type');
+      if (classErr) throw classErr;
+      classementParType = classData || [];
+    }
+
+    const gpRows = classementParType.filter(a => a.categorie === 'GP');
+    const mpRows = classementParType.filter(a => a.categorie === 'MP');
+    _renderRankList('classementGpVolume', [...gpRows].sort((a, b) => b.total_vols - a.total_vols), 'total_vols', ' vols');
+    _renderRankList('classementGpNc',     [...gpRows].sort((a, b) => b.total_nc - a.total_nc), 'total_nc', ' NC');
+    _renderRankList('classementMpVolume', [...mpRows].sort((a, b) => b.total_vols - a.total_vols), 'total_vols', ' vols');
+    _renderRankList('classementMpNc',     [...mpRows].sort((a, b) => b.total_nc - a.total_nc), 'total_nc', ' NC');
+
+    // ---- KPI personnels ----
+    const totalVols = ownVols.length;
+    const totalC = ownControles.filter(c => c.conformite === 'C').length;
+    const totalNC = ownControles.filter(c => c.conformite === 'NC').length;
+    const tauxPerso = (totalC + totalNC) > 0 ? ((totalC / (totalC + totalNC)) * 100).toFixed(1) : '—';
+
+    kpiGrid.innerHTML = `
+      <div class="stat-card"><div class="stat-icon">📨</div><div class="stat-body"><div class="stat-value">${totalVols}</div><div class="stat-label">Contrôles soumis</div></div></div>
+      <div class="stat-card"><div class="stat-icon">📈</div><div class="stat-body"><div class="stat-value">${tauxPerso !== '—' ? tauxPerso + '%' : '—'}</div><div class="stat-label">Taux conformité</div></div></div>
+      <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-body"><div class="stat-value">${totalC}</div><div class="stat-label">Points conformes</div></div></div>
+      <div class="stat-card stat-card-alert"><div class="stat-icon">❌</div><div class="stat-body"><div class="stat-value">${totalNC}</div><div class="stat-label">Non-conformités</div></div></div>
+    `;
+
+    // ---- Répartition par type de vol ----
+    const byType = {};
+    ownVols.forEach(v => { (byType[v.type_vol] ||= { vols: 0, c: 0, nc: 0 }).vols++; });
+    const ownVolById = new Map(ownVols.map(v => [v.id, v]));
+    ownControles.forEach(c => {
+      const vol = ownVolById.get(c.vol_id);
+      if (!vol) return;
+      const t = byType[vol.type_vol];
+      if (c.conformite === 'C') t.c++; else if (c.conformite === 'NC') t.nc++;
+    });
+    const typeEntries = Object.entries(byType);
+    typeContainer.innerHTML = typeEntries.length
+      ? typeEntries.map(([type, s]) => {
+          const total = s.c + s.nc;
+          const t = total > 0 ? Math.round((s.c / total) * 1000) / 10 : null;
+          const cls = t === null ? '' : t >= 80 ? 'taux-ok' : t >= 50 ? 'taux-mid' : 'taux-low';
+          return `
+            <div class="realisation-type-row">
+              <span class="realisation-type-name">${type}</span>
+              <span class="realisation-type-stats">
+                <span>${s.vols} vol${s.vols > 1 ? 's' : ''}</span>
+                <span>${s.c} C</span>
+                <span>${s.nc} NC</span>
+                <span class="badge-stat ${cls}">${t !== null ? t + '%' : '—'}</span>
+              </span>
+            </div>`;
+        }).join('')
+      : '<div class="empty-state">Aucun contrôle soumis pour l\'instant.</div>';
+
+  } catch (err) {
+    console.error(err);
+    kpiGrid.innerHTML = '<div class="empty-state error">Erreur de chargement.</div>';
+    typeContainer.innerHTML = '';
+    ['classementGpVolume', 'classementGpNc', 'classementMpVolume', 'classementMpNc'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '<div class="empty-state error">Erreur de chargement.</div>';
+    });
   }
 }
 

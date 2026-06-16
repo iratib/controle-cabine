@@ -1189,6 +1189,70 @@ input, select, textarea { font-family: var(--font); }
 .taux-mid { background: #fef9c3; color: #92400e; }
 .taux-low { background: #fee2e2; color: #dc2626; }
 
+/* RÉALISATIONS (agent) */
+.realisation-type-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .5rem;
+  padding: .65rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.realisation-type-row:last-child { border-bottom: none; }
+.realisation-type-name { font-size: .875rem; font-weight: 600; color: var(--text-primary); }
+.realisation-type-stats {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  font-size: .8125rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.realisation-me { background: rgba(227,24,55,.07); }
+.realisation-rank { font-weight: 700; text-align: center; }
+
+.realisation-classement-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+@media (max-width: 900px) {
+  .realisation-classement-grid { grid-template-columns: 1fr; }
+}
+.realisation-subtitle {
+  font-size: .8125rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: .5rem;
+}
+.realisation-rank-row {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .55rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.realisation-rank-row:last-child { border-bottom: none; }
+.realisation-rank-row .realisation-rank { min-width: 24px; font-size: .9375rem; }
+.realisation-rank-row .realisation-rank-name { flex: 1; font-size: .8125rem; font-weight: 600; color: var(--text-primary); }
+.realisation-rank-row .realisation-rank-value { font-size: .875rem; font-weight: 700; color: var(--text-primary); white-space: nowrap; }
+.realisation-rank-row.realisation-me { border-radius: 8px; padding-left: .5rem; padding-right: .5rem; }
+
+.btn-link-plustard {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: .8125rem;
+  text-decoration: underline;
+  cursor: pointer;
+  margin-top: .5rem;
+  padding: .25rem;
+}
+.btn-link-plustard:hover { color: var(--text-primary); }
+
 .mc-card-meta {
   display: flex;
   flex-wrap: wrap;
@@ -4173,3 +4237,9 @@ html[data-theme="dark"] .archive-info-banner strong { color: #dcfce7; }
 
 /* Variable manquante utilisée par .evol-db-legend / .evol-db-label */
 html { --text-muted: var(--text-secondary); }
+
+/* Badges de taux (Réalisations, Mes contrôles) — trop pastel sur fond sombre */
+html[data-theme="dark"] .taux-ok  { background: rgba(16,185,129,.18); color: #6ee7b7; }
+html[data-theme="dark"] .taux-mid { background: rgba(245,158,11,.18); color: #fcd34d; }
+html[data-theme="dark"] .taux-low { background: rgba(239,68,68,.18);  color: #fca5a5; }
+html[data-theme="dark"] .realisation-me { background: rgba(227,24,55,.15); }

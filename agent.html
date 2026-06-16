@@ -92,6 +92,10 @@
           <span class="sidebar-icon"><i class="fas fa-clipboard-list"></i></span>
           <span>Procédures SLA</span>
         </a>
+        <a href="#" class="sidebar-link" data-view="realisations">
+          <span class="sidebar-icon"><i class="fas fa-trophy"></i></span>
+          <span>Réalisations</span>
+        </a>
         <a href="#" class="sidebar-link" id="btnMonCompte">
           <span class="sidebar-icon"><i class="fas fa-key"></i></span>
           <span>Changer mot de passe</span>
@@ -411,7 +415,68 @@
         </div>
       </div>
 
+      <!-- ======== VUE : RÉALISATIONS ======== -->
+      <div id="viewRealisations" class="view" style="display:none;">
+        <div class="page-title">
+          <h2><i class="fas fa-trophy"></i> Réalisations</h2>
+        </div>
+
+        <div class="stats-grid" id="realisationsKpiGrid">
+          <div class="loading-state">Chargement…</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Mes contrôles par type de vol</h3></div>
+          <div class="card-body">
+            <div id="realisationsParType"><div class="loading-state">Chargement…</div></div>
+          </div>
+        </div>
+
+        <div class="realisation-classement-grid">
+          <div class="card">
+            <div class="card-header"><h3>🛫 Gros Porteur — Classement équipe</h3></div>
+            <div class="card-body">
+              <div class="realisation-subtitle">Par volume de contrôles soumis</div>
+              <div id="classementGpVolume"><div class="loading-state">Chargement…</div></div>
+              <div class="realisation-subtitle" style="margin-top:1.25rem;">Par non-conformités (du plus au moins)</div>
+              <div id="classementGpNc"><div class="loading-state">Chargement…</div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>✈ Moyen Porteur — Classement équipe</h3></div>
+            <div class="card-body">
+              <div class="realisation-subtitle">Par volume de contrôles soumis</div>
+              <div id="classementMpVolume"><div class="loading-state">Chargement…</div></div>
+              <div class="realisation-subtitle" style="margin-top:1.25rem;">Par non-conformités (du plus au moins)</div>
+              <div id="classementMpNc"><div class="loading-state">Chargement…</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </main>
+  </div>
+
+  <!-- MODAL VOL EN COURS (au login) -->
+  <div id="modalVolEnCours" class="modal-overlay" style="display:none;">
+    <div class="modal modal-confirm">
+      <div class="modal-confirm-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+      </div>
+      <h3 class="modal-confirm-title">Contrôle en cours non terminé</h3>
+      <p class="modal-confirm-text">
+        Vous avez un contrôle en cours sur le vol <strong id="encoursVolNumero"></strong>.
+        Voulez-vous le continuer ou le supprimer ?
+      </p>
+      <p class="modal-confirm-text" id="encoursVolAutres" style="display:none;"></p>
+      <div class="modal-confirm-actions">
+        <button class="btn btn-outline" id="btnSupprimerVolEnCours">Supprimer</button>
+        <button class="btn btn-primary" id="btnContinuerVolEnCours">Continuer le contrôle</button>
+      </div>
+      <button class="btn-link-plustard" id="btnPlusTardVolEnCours" type="button">Plus tard</button>
+    </div>
   </div>
 
   <!-- MODAL SUPPRESSION VOL -->
