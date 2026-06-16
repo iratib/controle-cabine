@@ -7,6 +7,7 @@
   <link rel="icon" type="image/png" href="images/logo.png" />
   <link rel="manifest" href="/manifest.json" />
   <script>window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__pwaDeferred=e;});</script>
+  <script>(function(){var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t);})();</script>
   <meta name="theme-color" content="#be1e2d" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -28,6 +29,7 @@
     </div>
     <div class="topbar-right">
       <button id="pwa-topbar-install" title="Installer l'application" style="display:none;background:transparent;border:none;color:#94a3b8;cursor:pointer;font-size:.85rem;padding:.35rem .6rem;border-radius:8px;" onclick="window.__pwaInstall()"><i class="fas fa-download"></i></button>
+      <button id="btnTheme" aria-label="Mode nuit" title="Mode nuit"><i class="fas fa-moon"></i></button>
       <button class="btn-notif" aria-label="Notifications"><i class="fas fa-bell"></i></button>
       <span class="topbar-username" id="agentNomTopbar">…</span>
       <div class="topbar-avatar" id="topbarAvatar">AG</div>

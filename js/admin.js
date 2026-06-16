@@ -5,6 +5,7 @@
 import { supabase, isDemoMode } from './supabase-client.js';
 import { requireRole, logout } from './auth.js';
 import { showToast, formatDate, getStatutBadge } from './utils.js';
+import { initTheme } from './theme.js';
 import {
   demoGetVols, demoGetVol, demoGetControles, demoUpdateVol,
   demoGetAllControles, demoGetAgents, demoToggleAgent, demoCreateAgent
@@ -36,6 +37,12 @@ const _CHART_DEFAULTS = {
 Chart.defaults.font.family = _CHART_DEFAULTS.font.family;
 Chart.defaults.font.size   = _CHART_DEFAULTS.font.size;
 Chart.defaults.color       = _CHART_DEFAULTS.color;
+
+// Couleurs adaptées au thème actif (mode nuit = teintes plus vives/opaques pour rester visibles)
+function _isDarkTheme() { return document.documentElement.getAttribute('data-theme') === 'dark'; }
+function _gridColor() { return _isDarkTheme() ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.05)'; }
+function _barInspColor() { return _isDarkTheme() ? 'rgba(239,68,68,.55)' : 'rgba(190,30,45,.15)'; }
+function _barInspHoverColor() { return _isDarkTheme() ? 'rgba(239,68,68,.8)' : 'rgba(190,30,45,.35)'; }
 
 function getMonthsList() {
   const months = [];
@@ -152,6 +159,7 @@ let allCompagnies = [];
 // ---- INIT ----
 
 async function init() {
+  initTheme();
   const auth = await requireRole('admin'); // admin, chef, superviseur
   if (!auth) return;
   currentUser = auth.profile;
@@ -533,7 +541,7 @@ function renderChartVolsParAgent(vols) {
         }
       },
       scales: {
-        x: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: 'rgba(0,0,0,.05)' } },
+        x: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: _gridColor() } },
         y: { grid: { display: false } }
       }
     }
@@ -609,7 +617,7 @@ function _renderZoneChart(containerId, typeFilter) {
         }
       },
       scales: {
-        x: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+        x: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: _gridColor() } },
         y: { grid: { display: false } }
       }
     }
@@ -689,8 +697,8 @@ function renderChartEvolution(period, fromDate, toDate, month, vols, controles) 
           type: 'bar',
           label: 'Inspections',
           data: data.map(d => d.insp),
-          backgroundColor: 'rgba(190,30,45,.15)',
-          hoverBackgroundColor: 'rgba(190,30,45,.35)',
+          backgroundColor: _barInspColor(),
+          hoverBackgroundColor: _barInspHoverColor(),
           borderRadius: 4,
           yAxisID: 'yInsp',
           order: 2,
@@ -730,7 +738,7 @@ function renderChartEvolution(period, fromDate, toDate, month, vols, controles) 
       scales: {
         yInsp: {
           type: 'linear', position: 'left', beginAtZero: true, ticks: { stepSize: 1 },
-          grid: { color: 'rgba(0,0,0,.05)' }, title: { display: true, text: 'Inspections' }
+          grid: { color: _gridColor() }, title: { display: true, text: 'Inspections' }
         },
         yTaux: {
           type: 'linear', position: 'right', min: 0, max: 100,
@@ -907,7 +915,7 @@ function renderChartControlesType(vols, controles) {
         }
       },
       scales: {
-        x: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+        x: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: _gridColor() } },
         y: { grid: { display: false } }
       }
     }
@@ -962,7 +970,7 @@ function renderChartTypeVol(vols, controles) {
         }
       },
       scales: {
-        x: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+        x: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: _gridColor() } },
         y: { grid: { display: false } }
       }
     }

@@ -5,6 +5,7 @@
 import { supabase, isDemoMode } from './supabase-client.js';
 import { requireRole, logout } from './auth.js';
 import { showToast, formatDate, getStatutBadge } from './utils.js';
+import { initTheme } from './theme.js';
 import {
   demoCreateVol, demoGetVols, demoGetVol,
   demoGetControles, demoUpsertControle, demoUpdateVol
@@ -355,6 +356,7 @@ let agentSlaCache = {};
 // ---- INIT ----
 
 async function init() {
+  initTheme();
   const auth = await requireRole('agent');
   if (!auth) return;
   currentUser = auth.profile;
