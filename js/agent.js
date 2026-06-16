@@ -4,7 +4,7 @@
 
 import { supabase, isDemoMode } from './supabase-client.js';
 import { requireRole, logout } from './auth.js';
-import { showToast, formatDate, getStatutBadge } from './utils.js';
+import { showToast, formatDate, getStatutBadge, formatRelativeTime } from './utils.js';
 import { initTheme } from './theme.js';
 import {
   demoCreateVol, demoGetVols, demoGetVol,
@@ -384,6 +384,7 @@ async function init() {
   setupOfflineDetection();
   loadMesControles();
   updateBadgeEnCours();
+  setupNotifications();
 
   // Sidebar mobile
   document.getElementById('btnMenu').addEventListener('click', () => {
@@ -2204,6 +2205,80 @@ async function updateBadgeEnCours() {
     enCoursTotal = 0;
     badge.style.display = 'none';
   }
+}
+
+// ---- NOTIFICATIONS ----
+
+function setupNotifications() {
+  const wrap = document.getElementById('notifWrap');
+  const btn = document.getElementById('btnNotif');
+  const dropdown = document.getElementById('notifDropdown');
+  if (!wrap || !btn || !dropdown) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const opening = dropdown.style.display !== 'block';
+    dropdown.style.display = opening ? 'block' : 'none';
+    if (opening) loadNotifications();
+  });
+  document.addEventListener('click', (e) => {
+    if (!wrap.contains(e.target)) dropdown.style.display = 'none';
+  });
+
+  loadNotifications();
+  if (!isDemoMode) setInterval(loadNotifications, 60000);
+}
+
+async function loadNotifications() {
+  const badge = document.getElementById('notifBadge');
+  const list = document.getElementById('notifList');
+  if (!badge || !list) return;
+
+  let vols = [];
+  let totalCount = 0;
+  try {
+    if (isDemoMode) {
+      const allRejetes = demoGetVols('demo').filter(v => v.statut === 'rejeté');
+      totalCount = allRejetes.length;
+      vols = allRejetes.slice(0, 15);
+    } else {
+      const { count, error: countError } = await supabase
+        .from('vols')
+        .select('id', { count: 'exact', head: true })
+        .eq('agent_id', currentUser?.id)
+        .eq('statut', 'rejeté');
+      if (countError) throw countError;
+      totalCount = count || 0;
+
+      const { data, error } = await supabase
+        .from('vols')
+        .select('id, numero_vol, date_vol, statut, updated_at')
+        .eq('agent_id', currentUser?.id)
+        .eq('statut', 'rejeté')
+        .order('updated_at', { ascending: false })
+        .limit(15);
+      if (error) throw error;
+      vols = data || [];
+    }
+  } catch (err) {
+    console.error(err);
+    return;
+  }
+
+  badge.style.display = totalCount > 0 ? 'flex' : 'none';
+  if (totalCount > 0) badge.textContent = totalCount > 99 ? '99+' : String(totalCount);
+
+  list.innerHTML = vols.length
+    ? vols.map(v => `
+        <div class="notif-item" onclick="window.viewFiche('${v.id}')">
+          <i class="fas fa-circle-exclamation notif-item-icon"></i>
+          <div class="notif-item-body">
+            <div class="notif-item-text"><strong>${v.numero_vol}</strong> rejeté — correction nécessaire</div>
+            <div class="notif-item-time">${formatRelativeTime(v.updated_at)}</div>
+          </div>
+        </div>
+      `).join('')
+    : '<div class="notif-empty">Aucune notification</div>';
 }
 
 // ---- OFFLINE ----

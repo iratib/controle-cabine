@@ -4,7 +4,7 @@
 
 import { supabase, isDemoMode } from './supabase-client.js';
 import { requireRole, logout } from './auth.js';
-import { showToast, formatDate, getStatutBadge } from './utils.js';
+import { showToast, formatDate, getStatutBadge, formatRelativeTime } from './utils.js';
 import { initTheme } from './theme.js';
 import {
   demoGetVols, demoGetVol, demoGetControles, demoUpdateVol,
@@ -197,6 +197,7 @@ async function init() {
   if (!isDemoMode) setupRealtime();
   setupModals();
   setupExport();
+  setupNotifications();
 
   document.getElementById('btnMenu').addEventListener('click', () => {
     document.getElementById('sidebar').classList.toggle('sidebar-open');
@@ -1064,8 +1065,89 @@ function setupRealtime() {
       showToast('Nouvelle activité reçue en temps réel', 'info');
       loadActiviteRecente();
       loadDashboard();
+      loadNotifications();
     })
     .subscribe();
+}
+
+// ---- NOTIFICATIONS ----
+
+let _notifPollTimer = null;
+// Référence "ouverture de l'app" — seuls les vols soumis après ce moment comptent dans la cloche
+const _appOpenedAt = new Date().toISOString();
+
+function setupNotifications() {
+  const wrap = document.getElementById('notifWrap');
+  const btn = document.getElementById('btnNotif');
+  const dropdown = document.getElementById('notifDropdown');
+  if (!wrap || !btn || !dropdown) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const opening = dropdown.style.display !== 'block';
+    dropdown.style.display = opening ? 'block' : 'none';
+    if (opening) loadNotifications();
+  });
+  document.addEventListener('click', (e) => {
+    if (!wrap.contains(e.target)) dropdown.style.display = 'none';
+  });
+
+  loadNotifications();
+  if (!isDemoMode) _notifPollTimer = setInterval(loadNotifications, 60000);
+}
+
+async function loadNotifications() {
+  const badge = document.getElementById('notifBadge');
+  const list = document.getElementById('notifList');
+  if (!badge || !list) return;
+
+  let vols = [];
+  let totalCount = 0;
+  try {
+    if (isDemoMode) {
+      const allSoumis = demoGetVols().filter(v => v.statut === 'soumis' && v.updated_at > _appOpenedAt);
+      totalCount = allSoumis.length;
+      vols = allSoumis
+        .map(v => ({ ...v, profiles: v.profiles || { nom: 'Agent Démo' } }))
+        .slice(0, 15);
+    } else {
+      const { count, error: countError } = await supabase
+        .from('vols')
+        .select('id', { count: 'exact', head: true })
+        .eq('statut', 'soumis')
+        .gt('updated_at', _appOpenedAt);
+      if (countError) throw countError;
+      totalCount = count || 0;
+
+      const { data, error } = await supabase
+        .from('vols')
+        .select('id, numero_vol, date_vol, statut, updated_at, profiles(nom)')
+        .eq('statut', 'soumis')
+        .gt('updated_at', _appOpenedAt)
+        .order('updated_at', { ascending: false })
+        .limit(15);
+      if (error) throw error;
+      vols = data || [];
+    }
+  } catch (err) {
+    console.error(err);
+    return;
+  }
+
+  badge.style.display = totalCount > 0 ? 'flex' : 'none';
+  if (totalCount > 0) badge.textContent = totalCount > 99 ? '99+' : String(totalCount);
+
+  list.innerHTML = vols.length
+    ? vols.map(v => `
+        <div class="notif-item" onclick="window.adminViewFiche('${v.id}','${(v.numero_vol||'').replace(/'/g,"\\'")}','${v.date_vol}')">
+          <i class="fas fa-paper-plane notif-item-icon"></i>
+          <div class="notif-item-body">
+            <div class="notif-item-text"><strong>${v.numero_vol}</strong> soumis par ${v.profiles?.nom || '—'}</div>
+            <div class="notif-item-time">${formatRelativeTime(v.updated_at)}</div>
+          </div>
+        </div>
+      `).join('')
+    : '<div class="notif-empty">Aucune notification</div>';
 }
 
 // ---- TOUS LES CONTRÔLES ----
@@ -1947,6 +2029,7 @@ async function loadAnalyseType(type) {
     if (isDemoMode) {
       vols = demoGetVols().filter(v =>
         typeVolValues.includes(v.type_vol) &&
+        v.statut === 'soumis' &&
         v.date_vol >= fromDate && v.date_vol <= toDate &&
         (!cieFilter || v.numero_vol?.match(/^[A-Z]+/)?.[0] === cieFilter)
       );
@@ -1962,6 +2045,7 @@ async function loadAnalyseType(type) {
         let q = supabase
           .from('vols')
           .select('id, numero_vol, immatriculation, agent_id, date_vol, type_vol')
+          .eq('statut', 'soumis')
           .in('type_vol', typeVolValues)
           .gte('date_vol', fromDate)
           .lte('date_vol', toDate)

@@ -30,7 +30,16 @@
     <div class="topbar-right">
       <button id="pwa-topbar-install" title="Installer l'application" style="display:none;background:transparent;border:none;color:#94a3b8;cursor:pointer;font-size:.85rem;padding:.35rem .6rem;border-radius:8px;" onclick="window.__pwaInstall()"><i class="fas fa-download"></i></button>
       <button id="btnTheme" aria-label="Mode nuit" title="Mode nuit"><i class="fas fa-moon"></i></button>
-      <button class="btn-notif" aria-label="Notifications"><i class="fas fa-bell"></i></button>
+      <div class="notif-wrap" id="notifWrap">
+        <button class="btn-notif" id="btnNotif" aria-label="Notifications" title="Notifications">
+          <i class="fas fa-bell"></i>
+          <span class="notif-badge" id="notifBadge" style="display:none;">0</span>
+        </button>
+        <div class="notif-dropdown" id="notifDropdown" style="display:none;">
+          <div class="notif-dropdown-header">Notifications</div>
+          <div id="notifList"><div class="notif-empty">Aucune notification</div></div>
+        </div>
+      </div>
       <span class="topbar-username" id="adminNomTopbar">…</span>
       <div class="topbar-avatar" style="background:#f59e0b;" id="topbarAvatar">CD</div>
       <button class="btn btn-outline btn-sm" id="btnLogout">
