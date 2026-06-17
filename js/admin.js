@@ -218,7 +218,14 @@ function setupNavigation() {
       document.getElementById('sidebar').classList.remove('sidebar-open');
 
       if (view === 'dashboard') loadDashboard();
-      else if (view === 'controles') loadTousControles();
+      else if (view === 'controles') {
+        const today = new Date().toISOString().split('T')[0];
+        const deDe = document.getElementById('filterDateDe');
+        const dateA = document.getElementById('filterDateA');
+        if (deDe && !deDe.value) deDe.value = today;
+        if (dateA && !dateA.value) dateA.value = today;
+        loadTousControles({ dateDe: deDe?.value || today, dateA: dateA?.value || today });
+      }
       else if (view === 'par-agent') setupParAgent();
       else if (view === 'nc') loadNC();
       else if (view === 'agents') loadAgentsTable();
@@ -634,8 +641,8 @@ function renderChartEvolution(period, fromDate, toDate, month, vols, controles) 
 
   // Choisir le regroupement selon la période
   const useMonth = period === 'all' || (!month && !fromDate);
-  const useWeek  = period === '30' || (fromDate && !month);
-  // Pour un mois sélectionné ou 7 jours → par jour
+  const useWeek  = false; // was: period==='30' groupait par semaine → 1 seule barre si peu de données
+  // Pour 7j / 30j / mois sélectionné → par jour (useWeek désactivé)
 
   const volToGroup = {};
   const groupLabels = {};
@@ -688,9 +695,13 @@ function renderChartEvolution(period, fromDate, toDate, month, vols, controles) 
     partial: false
   }));
 
-  const canvas = _makeCanvas(container, 260);
+  const canvas = _makeCanvas(container, 280);
+  const isDark = _isDarkTheme();
+  const labelColor = isDark ? '#e2e8f0' : '#374151';
+
   _charts[container.id] = new Chart(canvas, {
     type: 'bar',
+    plugins: [ChartDataLabels],
     data: {
       labels: data.map(d => d.label),
       datasets: [
@@ -703,6 +714,13 @@ function renderChartEvolution(period, fromDate, toDate, month, vols, controles) 
           borderRadius: 4,
           yAxisID: 'yInsp',
           order: 2,
+          datalabels: {
+            anchor: 'center',
+            align: 'center',
+            color: isDark ? '#fff' : '#1f2937',
+            font: { weight: 'bold', size: 12 },
+            formatter: v => v,
+          }
         },
         {
           type: 'line',
@@ -712,19 +730,28 @@ function renderChartEvolution(period, fromDate, toDate, month, vols, controles) 
           backgroundColor: 'rgba(16,185,129,.1)',
           borderWidth: 2.5,
           pointBackgroundColor: '#10b981',
-          pointRadius: 3,
+          pointRadius: 4,
           pointHoverRadius: 6,
           tension: 0.35,
           fill: true,
           yAxisID: 'yTaux',
           order: 1,
           spanGaps: true,
+          datalabels: {
+            anchor: 'end',
+            align: 'bottom',
+            offset: 6,
+            color: '#10b981',
+            font: { weight: '700', size: 10 },
+            formatter: v => v !== null ? v.toFixed(0) + '%' : '',
+          }
         }
       ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { top: 24 } },
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { position: 'top', labels: { usePointStyle: true, padding: 16, font: { size: 11 } } },
@@ -734,7 +761,8 @@ function renderChartEvolution(period, fromDate, toDate, month, vols, controles) 
               ? ` ${ctx.parsed.y} inspection${ctx.parsed.y > 1 ? 's' : ''}`
               : ctx.parsed.y !== null ? ` ${ctx.parsed.y.toFixed(1)}% conformité` : ' —'
           }
-        }
+        },
+        datalabels: { display: true }
       },
       scales: {
         yInsp: {
@@ -1278,8 +1306,10 @@ document.getElementById('btnFiltrer')?.addEventListener('click', () => {
 
 document.getElementById('btnResetFiltres')?.addEventListener('click', () => {
   ['filterAgent', 'filterStatut', 'filterTypeVol'].forEach(id => document.getElementById(id).value = '');
-  ['filterDateDe', 'filterDateA'].forEach(id => document.getElementById(id).value = '');
-  loadTousControles();
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('filterDateDe').value = today;
+  document.getElementById('filterDateA').value = today;
+  loadTousControles({ dateDe: today, dateA: today });
 });
 
 // ---- VOIR FICHE (ADMIN) ----
