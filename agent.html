@@ -88,6 +88,10 @@
           <span>Mes contrôles</span>
           <span class="badge" id="badgeEnCours" style="display:none;">0</span>
         </a>
+        <a href="#" class="sidebar-link" data-view="guide">
+          <span class="sidebar-icon"><i class="fas fa-circle-question"></i></span>
+          <span>Guide des types de vol</span>
+        </a>
         <a href="#" class="sidebar-link" data-view="sla">
           <span class="sidebar-icon"><i class="fas fa-clipboard-list"></i></span>
           <span>Procédures SLA</span>
@@ -450,6 +454,164 @@
               <div class="realisation-subtitle" style="margin-top:1.25rem;">Par non-conformités (du plus au moins)</div>
               <div id="classementMpNc"><div class="loading-state">Chargement…</div></div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======== VUE : GUIDE DES TYPES DE VOL ======== -->
+      <div id="viewGuide" class="view" style="display:none;">
+        <div class="page-title">
+          <h2><i class="fas fa-circle-question"></i> Guide des types de vol</h2>
+        </div>
+
+        <!-- Règle d'or -->
+        <div class="gv-hero">
+          <div class="gv-hero-icon"><i class="fas fa-lightbulb"></i></div>
+          <div class="gv-hero-text">
+            <h3>La seule chose à retenir</h3>
+            <p>Le type de contrôle dépend de <strong>la durée de l'escale</strong> (temps au sol entre l'arrivée et le départ).
+            Plus l'escale est <strong>courte</strong> → <span class="gv-tag gv-tag-transit">TRANSIT</span>.
+            Plus elle est <strong>longue</strong> → <span class="gv-tag gv-tag-stop">STOP CMN</span>.</p>
+          </div>
+        </div>
+
+        <!-- Deux concepts -->
+        <div class="gv-concept-grid">
+          <div class="gv-concept gv-concept-transit">
+            <div class="gv-concept-head"><span class="gv-concept-emoji">🛫</span> Transit</div>
+            <p class="gv-concept-def">Nettoyage <strong>rapide</strong> : l'avion repart vite, l'escale est <strong>courte</strong>.</p>
+            <ul class="gv-concept-list">
+              <li><i class="fas fa-check"></i> Escale <strong>courte</strong></li>
+              <li><i class="fas fa-check"></i> Nettoyage de base (cabine, galley)</li>
+              <li><i class="fas fa-check"></i> SLA plus serré</li>
+            </ul>
+          </div>
+          <div class="gv-concept gv-concept-stop">
+            <div class="gv-concept-head"><span class="gv-concept-emoji">🛬</span> Stop CMN</div>
+            <p class="gv-concept-def">Nettoyage <strong>complet</strong> : l'avion reste longtemps, l'escale est <strong>longue</strong>.</p>
+            <ul class="gv-concept-list">
+              <li><i class="fas fa-check"></i> Escale <strong>longue</strong></li>
+              <li><i class="fas fa-check"></i> Nettoyage complet (toutes zones)</li>
+              <li><i class="fas fa-check"></i> SLA plus large</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Tableau des seuils -->
+        <div class="card gv-card">
+          <div class="card-header"><h3><i class="fas fa-table"></i> Le seuil dépend du porteur</h3></div>
+          <div class="card-body">
+            <div class="gv-table-scroll">
+              <table class="gv-table">
+                <thead>
+                  <tr>
+                    <th>Type d'avion</th>
+                    <th>Exemples</th>
+                    <th><span class="gv-tag gv-tag-transit">TRANSIT si…</span></th>
+                    <th><span class="gv-tag gv-tag-stop">STOP CMN si…</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="gv-porteur gv-porteur-mp">Petit / Moyen porteur</span></td>
+                    <td class="gv-examples">ATR · E190 · 737 · 738</td>
+                    <td class="gv-c-transit">escale <strong>&lt; 1h15</strong></td>
+                    <td class="gv-c-stop">escale <strong>&gt; 1h15</strong></td>
+                  </tr>
+                  <tr>
+                    <td><span class="gv-porteur gv-porteur-gp">Gros porteur</span></td>
+                    <td class="gv-examples">767 · 787 · 788 · 789</td>
+                    <td class="gv-c-transit">escale <strong>&lt; 1h45</strong></td>
+                    <td class="gv-c-stop">escale <strong>&gt; 1h45</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="gv-note"><i class="fas fa-info-circle"></i> Astuce : un gros porteur a plus de sièges (souvent <strong>+ de 200</strong>) → plus de temps accordé.</p>
+          </div>
+        </div>
+
+        <!-- Timeline visuelle -->
+        <div class="card gv-card">
+          <div class="card-header"><h3><i class="fas fa-timeline"></i> Visualiser le seuil</h3></div>
+          <div class="card-body">
+            <div class="gv-timeline">
+              <div class="gv-timeline-label"><span class="gv-porteur gv-porteur-mp">Moyen porteur</span></div>
+              <div class="gv-bar">
+                <div class="gv-bar-transit" style="width:50%"><span>TRANSIT</span></div>
+                <div class="gv-bar-cut"><span class="gv-bar-cut-val">1h15</span></div>
+                <div class="gv-bar-stop" style="width:50%"><span>STOP CMN</span></div>
+              </div>
+              <div class="gv-bar-scale"><span>0h</span><span>escale au sol →</span><span>3h+</span></div>
+            </div>
+
+            <div class="gv-timeline">
+              <div class="gv-timeline-label"><span class="gv-porteur gv-porteur-gp">Gros porteur</span></div>
+              <div class="gv-bar">
+                <div class="gv-bar-transit" style="width:62%"><span>TRANSIT</span></div>
+                <div class="gv-bar-cut"><span class="gv-bar-cut-val">1h45</span></div>
+                <div class="gv-bar-stop" style="width:38%"><span>STOP CMN</span></div>
+              </div>
+              <div class="gv-bar-scale"><span>0h</span><span>escale au sol →</span><span>3h+</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mini calculateur -->
+        <div class="card gv-card gv-calc-card">
+          <div class="card-header"><h3><i class="fas fa-calculator"></i> Vérifier en 5 secondes</h3></div>
+          <div class="card-body">
+            <p class="gv-calc-help">Saisis les horaires et le type d'avion → l'app te dit le type de contrôle.</p>
+            <div class="gv-calc-grid">
+              <div class="gv-calc-field">
+                <label>Heure d'arrivée</label>
+                <input type="time" id="gvArr">
+              </div>
+              <div class="gv-calc-field">
+                <label>Heure de départ</label>
+                <input type="time" id="gvDep">
+              </div>
+              <div class="gv-calc-field">
+                <label>Type d'avion</label>
+                <div class="gv-porteur-toggle" id="gvPorteurToggle">
+                  <button type="button" class="gv-pbtn active" data-p="MP">Moyen porteur</button>
+                  <button type="button" class="gv-pbtn" data-p="GP">Gros porteur</button>
+                </div>
+              </div>
+            </div>
+            <div class="gv-calc-result" id="gvResult">
+              <i class="fas fa-arrow-up"></i> Renseigne les horaires pour voir le résultat.
+            </div>
+          </div>
+        </div>
+
+        <!-- Exemples concrets -->
+        <div class="card gv-card">
+          <div class="card-header"><h3><i class="fas fa-lightbulb"></i> Exemples concrets</h3></div>
+          <div class="card-body">
+            <div class="gv-examples-grid">
+              <div class="gv-ex gv-ex-transit">
+                <div class="gv-ex-top"><span class="gv-porteur gv-porteur-mp">MP</span><span class="gv-ex-esc">Escale 0h50</span></div>
+                <div class="gv-ex-calc">Arrivée 10:00 → Départ 10:50</div>
+                <div class="gv-ex-res gv-c-transit">0h50 &lt; 1h15 → <strong>TRANSIT</strong></div>
+              </div>
+              <div class="gv-ex gv-ex-stop">
+                <div class="gv-ex-top"><span class="gv-porteur gv-porteur-mp">MP</span><span class="gv-ex-esc">Escale 2h00</span></div>
+                <div class="gv-ex-calc">Arrivée 10:00 → Départ 12:00</div>
+                <div class="gv-ex-res gv-c-stop">2h00 &gt; 1h15 → <strong>STOP CMN</strong></div>
+              </div>
+              <div class="gv-ex gv-ex-transit">
+                <div class="gv-ex-top"><span class="gv-porteur gv-porteur-gp">GP</span><span class="gv-ex-esc">Escale 1h30</span></div>
+                <div class="gv-ex-calc">Arrivée 14:00 → Départ 15:30</div>
+                <div class="gv-ex-res gv-c-transit">1h30 &lt; 1h45 → <strong>TRANSIT</strong></div>
+              </div>
+              <div class="gv-ex gv-ex-stop">
+                <div class="gv-ex-top"><span class="gv-porteur gv-porteur-gp">GP</span><span class="gv-ex-esc">Escale 2h30</span></div>
+                <div class="gv-ex-calc">Arrivée 14:00 → Départ 16:30</div>
+                <div class="gv-ex-res gv-c-stop">2h30 &gt; 1h45 → <strong>STOP CMN</strong></div>
+              </div>
+            </div>
+            <div class="gv-warn"><i class="fas fa-triangle-exclamation"></i> Le même temps d'escale (ex. 1h30) ne donne pas le même type selon le porteur ! Vérifie toujours <strong>MP ou GP</strong> d'abord.</div>
           </div>
         </div>
       </div>

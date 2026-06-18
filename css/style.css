@@ -4368,3 +4368,133 @@ html[data-theme="dark"] .taux-ok  { background: rgba(16,185,129,.18); color: #6e
 html[data-theme="dark"] .taux-mid { background: rgba(245,158,11,.18); color: #fcd34d; }
 html[data-theme="dark"] .taux-low { background: rgba(239,68,68,.18);  color: #fca5a5; }
 html[data-theme="dark"] .realisation-me { background: rgba(227,24,55,.15); }
+
+/* ============================================================
+   GUIDE DES TYPES DE VOL (session agent)
+   ============================================================ */
+#viewGuide .gv-card { margin-bottom: 1rem; }
+
+/* Règle d'or (hero) */
+.gv-hero {
+  display: flex; align-items: center; gap: 1.1rem;
+  background: linear-gradient(135deg, rgba(227,24,55,.08), rgba(59,130,246,.06));
+  border: 1px solid var(--border); border-radius: 16px;
+  padding: 1.25rem 1.4rem; margin-bottom: 1.1rem;
+}
+.gv-hero-icon {
+  flex-shrink: 0; width: 54px; height: 54px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ram-red); color: #fff; font-size: 1.5rem;
+  box-shadow: 0 6px 16px rgba(227,24,55,.3);
+}
+.gv-hero-text h3 { font-family: var(--font-title); font-size: 1.05rem; margin: 0 0 .25rem; color: var(--text-primary); }
+.gv-hero-text p { margin: 0; color: var(--text-secondary); font-size: .9rem; line-height: 1.55; }
+.gv-tag { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .72rem; font-weight: 800; letter-spacing: .02em; }
+.gv-tag-transit { background: rgba(22,163,74,.15); color: #16a34a; }
+.gv-tag-stop    { background: rgba(217,119,6,.15);  color: #d97706; }
+
+/* Deux concepts */
+.gv-concept-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1.1rem; }
+.gv-concept {
+  background: var(--surface); border: 1px solid var(--border); border-top-width: 4px;
+  border-radius: 14px; padding: 1.1rem 1.2rem; box-shadow: var(--shadow);
+}
+.gv-concept-transit { border-top-color: #16a34a; }
+.gv-concept-stop    { border-top-color: #d97706; }
+.gv-concept-head { font-family: var(--font-title); font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: .5rem; color: var(--text-primary); }
+.gv-concept-emoji { font-size: 1.5rem; }
+.gv-concept-def { color: var(--text-secondary); font-size: .9rem; margin: .55rem 0 .8rem; line-height: 1.5; }
+.gv-concept-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .45rem; }
+.gv-concept-list li { font-size: .85rem; color: var(--text-primary); display: flex; align-items: center; gap: .55rem; }
+.gv-concept-transit .gv-concept-list i { color: #16a34a; }
+.gv-concept-stop .gv-concept-list i { color: #d97706; }
+
+/* Tableau des seuils */
+.gv-table-scroll { overflow-x: auto; }
+.gv-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.gv-table th, .gv-table td { padding: .7rem .8rem; text-align: left; border-bottom: 1px solid var(--border); }
+.gv-table th { font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; color: var(--text-secondary); font-weight: 700; }
+.gv-table td { color: var(--text-primary); }
+.gv-examples { color: var(--text-secondary); font-size: .82rem; }
+.gv-c-transit { color: #16a34a; }
+.gv-c-stop    { color: #d97706; }
+.gv-note { margin: .9rem 0 0; font-size: .82rem; color: var(--text-secondary); display: flex; align-items: center; gap: .5rem; }
+.gv-note i { color: #2563eb; }
+.gv-porteur { display: inline-block; padding: .18rem .55rem; border-radius: 7px; font-size: .78rem; font-weight: 700; }
+.gv-porteur-mp { background: rgba(100,116,139,.16); color: #475569; }
+.gv-porteur-gp { background: rgba(59,130,246,.16); color: #2563eb; }
+
+/* Timeline */
+.gv-timeline { margin-bottom: 1.4rem; }
+.gv-timeline:last-child { margin-bottom: 0; }
+.gv-timeline-label { margin-bottom: .5rem; }
+.gv-bar { display: flex; align-items: stretch; height: 46px; border-radius: 10px; overflow: hidden; position: relative; box-shadow: var(--shadow); }
+.gv-bar-transit, .gv-bar-stop { display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: .82rem; letter-spacing: .03em; }
+.gv-bar-transit { background: linear-gradient(135deg, #22c55e, #16a34a); }
+.gv-bar-stop    { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.gv-bar-cut { width: 0; position: relative; }
+.gv-bar-cut::before {
+  content: ""; position: absolute; top: -4px; bottom: -4px; left: -2px; width: 4px;
+  background: var(--text-primary); border-radius: 2px;
+}
+.gv-bar-cut-val {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: var(--text-primary); color: var(--surface); font-size: .72rem; font-weight: 800;
+  padding: .12rem .45rem; border-radius: 6px; white-space: nowrap; z-index: 2;
+}
+.gv-bar-scale { display: flex; justify-content: space-between; margin-top: .4rem; font-size: .74rem; color: var(--text-secondary); }
+
+/* Mini calculateur */
+.gv-calc-card { border: 1px solid var(--ram-red); }
+.gv-calc-help { color: var(--text-secondary); font-size: .88rem; margin: 0 0 1rem; }
+.gv-calc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.1rem; }
+.gv-calc-field { display: flex; flex-direction: column; gap: .35rem; }
+.gv-calc-field label { font-size: .78rem; font-weight: 600; color: var(--text-secondary); }
+.gv-calc-field input[type="time"] {
+  padding: .6rem .7rem; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text-primary); font-size: .95rem;
+}
+.gv-calc-field input[type="time"]:focus { outline: none; border-color: var(--ram-red); }
+.gv-porteur-toggle { display: flex; gap: .4rem; }
+.gv-pbtn {
+  flex: 1; padding: .6rem .4rem; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text-secondary); font-weight: 600; font-size: .8rem;
+  cursor: pointer; transition: var(--transition);
+}
+.gv-pbtn.active { background: var(--ram-red); border-color: var(--ram-red); color: #fff; }
+
+.gv-calc-result {
+  border-radius: 12px; padding: 1rem 1.2rem; text-align: center; font-size: .9rem;
+  color: var(--text-secondary); background: var(--bg); border: 1px dashed var(--border);
+}
+.gv-calc-result.gv-result-transit { background: rgba(22,163,74,.1); border: 1px solid rgba(22,163,74,.35); color: var(--text-primary); }
+.gv-calc-result.gv-result-stop    { background: rgba(217,119,6,.1);  border: 1px solid rgba(217,119,6,.35);  color: var(--text-primary); }
+.gv-result-esc { font-size: .85rem; color: var(--text-secondary); }
+.gv-result-type { font-family: var(--font-title); font-size: 1.6rem; font-weight: 800; margin: .25rem 0; }
+.gv-result-transit .gv-result-type { color: #16a34a; }
+.gv-result-stop .gv-result-type { color: #d97706; }
+.gv-result-rule { font-size: .82rem; color: var(--text-secondary); }
+
+/* Exemples */
+.gv-examples-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .85rem; }
+.gv-ex {
+  background: var(--surface); border: 1px solid var(--border); border-left-width: 4px;
+  border-radius: 12px; padding: .9rem 1rem; box-shadow: var(--shadow);
+}
+.gv-ex-transit { border-left-color: #16a34a; }
+.gv-ex-stop    { border-left-color: #d97706; }
+.gv-ex-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: .5rem; }
+.gv-ex-esc { font-weight: 700; color: var(--text-primary); font-size: .9rem; }
+.gv-ex-calc { font-size: .82rem; color: var(--text-secondary); margin-bottom: .55rem; }
+.gv-ex-res { font-size: .88rem; padding-top: .5rem; border-top: 1px solid var(--border); }
+.gv-warn {
+  margin-top: 1rem; display: flex; align-items: flex-start; gap: .6rem;
+  background: rgba(217,119,6,.1); border: 1px solid rgba(217,119,6,.3); border-radius: 10px;
+  padding: .75rem 1rem; font-size: .85rem; color: var(--text-primary); line-height: 1.5;
+}
+.gv-warn i { color: #d97706; margin-top: .15rem; }
+
+/* Dark mode */
+html[data-theme="dark"] .gv-porteur-mp { background: rgba(148,163,184,.2); color: #cbd5e1; }
+html[data-theme="dark"] .gv-bar-cut-val { color: #0f172a; }
+html[data-theme="dark"] .gv-hero { background: linear-gradient(135deg, rgba(227,24,55,.14), rgba(59,130,246,.1)); }
