@@ -3531,11 +3531,141 @@ function loadSlaConformiteView() {
     loadSlaStats(type, S, _slaCritere[S]);
   });
 
+  // Bouton récap PDF global (onclick remplacé à chaque visite, pas d'accumulation)
+  const recapBtn = document.getElementById('btnSlaRecapPdf');
+  if (recapBtn) recapBtn.onclick = () => exportSlaRecapPdf(recapBtn);
+
   if (anchor) {
     const sectionId = anchor === 'transit' ? 'slaConformiteTransitSection' : 'slaConformiteStopSection';
     setTimeout(() => {
       document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 300);
+  }
+}
+
+// ---- EXPORT PDF — VOLS NON CONFORMES SLA ----
+
+// Export du tableau actuellement affiché (après clic sur l'œil ou sur "Vols non conformes")
+async function exportDisplayedHorsSlaPdf(suffix, btn) {
+  if (!window.jspdf) { showToast('Bibliothèque PDF non chargée. Rechargez la page.', 'error'); return; }
+  const panel = document.getElementById(`slaHorsList_${suffix}`);
+  const table = panel?.querySelector('table.data-table');
+  const title = panel?.querySelector('h3')?.textContent?.trim() || 'Vols non conformes';
+  if (!table) { showToast('Aucun tableau à exporter.', 'error'); return; }
+
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const startY = await _drawDashboardPdfHeader(doc, title, '');
+    doc.autoTable({
+      html: table,
+      startY,
+      styles: { fontSize: 8, cellPadding: 1.6, overflow: 'linebreak' },
+      headStyles: { fillColor: [190, 30, 45], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { left: 14, right: 14 },
+    });
+    doc.save('SLA_non_conformes_' + suffix + '_' + new Date().toISOString().split('T')[0] + '.pdf');
+    showToast('PDF généré.', 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('Erreur génération PDF : ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+}
+
+// Aplatit les vols hors SLA (toutes catégories d'un type) triés par date
+function _mergeHorsSla(...statsObjs) {
+  const out = [];
+  statsObjs.forEach(o => Object.values(o).forEach(s => s.volsHorsSla.forEach(v => out.push({ v, s }))));
+  out.sort((a, b) => a.v.date_vol.localeCompare(b.v.date_vol));
+  return out;
+}
+
+// Ajoute une section (titre + tableau) au PDF récap, gère le saut de page
+function _addSlaRecapSection(doc, startY, title, head, rows) {
+  const pageH = doc.internal.pageSize.getHeight();
+  if (startY > pageH - 35) { doc.addPage(); startY = 20; }
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(190, 30, 45);
+  doc.text(_pdfSafe(`${title} (${rows.length})`), 14, startY);
+  startY += 2;
+
+  if (rows.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(120, 130, 145);
+    doc.text('Aucun vol non conforme.', 14, startY + 6);
+    return startY + 12;
+  }
+
+  doc.autoTable({
+    head: [head],
+    body: rows,
+    startY: startY + 1,
+    styles: { fontSize: 8, cellPadding: 1.6, overflow: 'linebreak' },
+    headStyles: { fillColor: [190, 30, 45], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    margin: { left: 14, right: 14 },
+  });
+  return doc.lastAutoTable.finalY + 10;
+}
+
+// Récap général : tous les vols non conformes, Temps + Agents, Transit + Stop CMN
+async function exportSlaRecapPdf(btn) {
+  if (!window.jspdf) { showToast('Bibliothèque PDF non chargée. Rechargez la page.', 'error'); return; }
+  const moisT = document.getElementById('slaStatsMoisTransit')?.value || '';
+  const moisS = document.getElementById('slaStatsMoisStop')?.value || '';
+
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Génération…'; }
+  try {
+    const [tTemps, sTemps, tAg, sAg] = await Promise.all([
+      fetchSlaStatsData('transit', 'temps', moisT),
+      fetchSlaStatsData('stop', 'temps', moisS),
+      fetchSlaStatsData('transit', 'agents', moisT),
+      fetchSlaStatsData('stop', 'agents', moisS),
+    ]);
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const sub = `Transit : ${tTemps.periodeLabel}    |    Stop CMN : ${sTemps.periodeLabel}`;
+    let y = await _drawDashboardPdfHeader(doc, 'Recap SLA - Vols non conformes', sub);
+
+    // Section TEMPS (Transit + Stop CMN)
+    const tempsRows = _mergeHorsSla(tTemps.stats, sTemps.stats).map(({ v, s }) => [
+      formatDate(v.date_vol), v.numero_vol || '-', v.immatriculation || '-', s.label,
+      v.profiles?.nom || '-',
+      `${v.heure_debut?.slice(0, 5) ?? '-'} - ${v.heure_fin?.slice(0, 5) ?? '-'}`,
+      `${v.duree} min`, `${s.sla} min`, `+${v.duree - s.sla} min`,
+    ]);
+    y = _addSlaRecapSection(doc, y,
+      'Non-conformite - TEMPS de traitement',
+      ['Date', 'N° vol', 'Immat.', 'Type', 'Agent', 'Horaires', 'Duree', 'SLA max', 'Depassement'],
+      tempsRows);
+
+    // Section AGENTS (Transit + Stop CMN)
+    const agRows = _mergeHorsSla(tAg.stats, sAg.stats).map(({ v, s }) => [
+      formatDate(v.date_vol), v.numero_vol || '-', v.immatriculation || '-', s.label,
+      v.profiles?.nom || '-',
+      `${v.nbReel} agents`, `${s.agentsReq} requis`, `-${s.agentsReq - v.nbReel}`,
+    ]);
+    _addSlaRecapSection(doc, y,
+      'Non-conformite - NOMBRE d\'agents',
+      ['Date', 'N° vol', 'Immat.', 'Type', 'Agent', 'Agents reels', 'Requis', 'Manquant'],
+      agRows);
+
+    doc.save('Recap_SLA_non_conformes_' + new Date().toISOString().split('T')[0] + '.pdf');
+    showToast('Récapitulatif PDF généré.', 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('Erreur génération PDF : ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
 }
 
@@ -3672,11 +3802,8 @@ function getSlaForBroadType(typeVolKey) {
   return Math.max(a, b);
 }
 
-async function loadSlaStats(typeFilter, suffix, critere = 'temps') {
-  const content = document.getElementById(`slaStatsContent${suffix}`);
-  content.innerHTML = '<div class="loading-state">Chargement…</div>';
-
-  const mois = document.getElementById(`slaStatsMois${suffix}`)?.value || '';
+// Récupère et calcule les stats SLA (réutilisé par l'affichage et l'export PDF)
+async function fetchSlaStatsData(typeFilter, critere, mois) {
   const range = mois ? monthToRange(mois) : null;
 
   let vols = [];
@@ -3693,7 +3820,7 @@ async function loadSlaStats(typeFilter, suffix, critere = 'temps') {
     let off = 0;
     while (true) {
       const { data: pg, error } = await q.range(off, off + 999);
-      if (error) { content.innerHTML = `<div class="empty-state">Erreur : ${error.message}</div>`; return; }
+      if (error) throw error;
       if (!pg || pg.length === 0) break;
       all.push(...pg); if (pg.length < 1000) break; off += 1000;
     }
@@ -3752,6 +3879,23 @@ async function loadSlaStats(typeFilter, suffix, critere = 'temps') {
   const periodeLabel = range
     ? `${MONTH_NAMES_FULL[parseInt(mois.split('-')[1]) - 1]} ${mois.split('-')[0]}`
     : 'toute la période';
+
+  return { stats, periodeLabel };
+}
+
+async function loadSlaStats(typeFilter, suffix, critere = 'temps') {
+  const content = document.getElementById(`slaStatsContent${suffix}`);
+  content.innerHTML = '<div class="loading-state">Chargement…</div>';
+
+  const mois = document.getElementById(`slaStatsMois${suffix}`)?.value || '';
+
+  let stats, periodeLabel;
+  try {
+    ({ stats, periodeLabel } = await fetchSlaStatsData(typeFilter, critere, mois));
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+    return;
+  }
 
   const totalHorsSla = Object.values(stats).reduce((acc, s) => acc + s.horsSla, 0);
   const isTemps = critere === 'temps';
@@ -3860,7 +4004,10 @@ async function loadSlaStats(typeFilter, suffix, critere = 'temps') {
       <div class="card sla-hors-card">
         <div class="card-header" style="background:rgba(239,68,68,.08);border-bottom:1px solid rgba(239,68,68,.2);">
           <h3 style="color:#ef4444"><i class="fas fa-triangle-exclamation"></i> Vols non conformes — ${periodeLabel}</h3>
-          <button class="btn btn-outline btn-sm" id="btnFermerHorsSla_${suffix}"><i class="fas fa-xmark"></i> Fermer</button>
+          <div style="display:flex;gap:.5rem;">
+            <button class="btn btn-outline btn-sm" id="btnPdfHorsSla_${suffix}"><i class="fas fa-file-pdf"></i> PDF</button>
+            <button class="btn btn-outline btn-sm" id="btnFermerHorsSla_${suffix}"><i class="fas fa-xmark"></i> Fermer</button>
+          </div>
         </div>
         <div class="card-body" style="overflow-x:auto;">
           ${allHorsRows.length === 0 ? '<div class="empty-state">Aucun vol non conforme</div>' : `
@@ -3891,6 +4038,10 @@ async function loadSlaStats(typeFilter, suffix, critere = 'temps') {
 
   document.getElementById(`btnFermerHorsSla_${suffix}`)?.addEventListener('click', () => {
     document.getElementById(`slaHorsList_${suffix}`).style.display = 'none';
+  });
+
+  document.getElementById(`btnPdfHorsSla_${suffix}`)?.addEventListener('click', (e) => {
+    exportDisplayedHorsSlaPdf(suffix, e.currentTarget);
   });
 
   document.querySelectorAll('.sla-voir-hors').forEach(btn => {
