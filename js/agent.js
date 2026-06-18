@@ -482,7 +482,72 @@ function showView(viewName) {
   } else if (viewName === 'realisations') {
     document.getElementById('viewRealisations').style.display = 'block';
     loadRealisations();
+  } else if (viewName === 'guide') {
+    document.getElementById('viewGuide').style.display = 'block';
+    wireGuideCalculator();
   }
+}
+
+// ---- GUIDE DES TYPES DE VOL (mini calculateur d'escale) ----
+
+let _gvWired = false;
+let _gvPorteur = 'MP';
+
+function wireGuideCalculator() {
+  if (_gvWired) return;
+  _gvWired = true;
+
+  const arr = document.getElementById('gvArr');
+  const dep = document.getElementById('gvDep');
+  const toggle = document.getElementById('gvPorteurToggle');
+
+  toggle?.querySelectorAll('.gv-pbtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      toggle.querySelectorAll('.gv-pbtn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _gvPorteur = btn.dataset.p;
+      computeGuideResult();
+    });
+  });
+
+  arr?.addEventListener('input', computeGuideResult);
+  dep?.addEventListener('input', computeGuideResult);
+}
+
+function _gvToMin(v) {
+  if (!v) return null;
+  const m = v.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function computeGuideResult() {
+  const res = document.getElementById('gvResult');
+  if (!res) return;
+
+  const arrMin = _gvToMin(document.getElementById('gvArr').value);
+  const depMin = _gvToMin(document.getElementById('gvDep').value);
+
+  if (arrMin == null || depMin == null) {
+    res.className = 'gv-calc-result';
+    res.innerHTML = '<i class="fas fa-arrow-up"></i> Renseigne les horaires pour voir le résultat.';
+    return;
+  }
+
+  let escale = depMin - arrMin;
+  if (escale < 0) escale += 1440; // passage minuit
+
+  const seuil = _gvPorteur === 'GP' ? 105 : 75; // 1h45 / 1h15
+  const seuilLabel = _gvPorteur === 'GP' ? '1h45' : '1h15';
+  const h = Math.floor(escale / 60), mm = escale % 60;
+  const escLabel = `${h}h${String(mm).padStart(2, '0')}`;
+  const isTransit = escale < seuil;
+
+  res.className = 'gv-calc-result ' + (isTransit ? 'gv-result-transit' : 'gv-result-stop');
+  res.innerHTML = `
+    <div class="gv-result-esc">Escale : <strong>${escLabel}</strong></div>
+    <div class="gv-result-type">${isTransit ? '🛫 TRANSIT' : '🛬 STOP CMN'}</div>
+    <div class="gv-result-rule">${escLabel} ${isTransit ? '&lt;' : '&gt;'} ${seuilLabel} (${_gvPorteur === 'GP' ? 'gros porteur' : 'moyen porteur'})</div>`;
 }
 
 // ---- PROCÉDURES SLA (lecture seule) ----
