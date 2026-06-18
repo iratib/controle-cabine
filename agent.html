@@ -496,6 +496,34 @@
     </div>
   </div>
 
+  <!-- MODAL CONFIRMATION TYPE DE VOL -->
+  <div id="modalTypeVol" class="modal-overlay" style="display:none;">
+    <div class="modal modal-confirm modal-typevol">
+      <div class="modal-confirm-icon modal-confirm-icon-warn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </div>
+      <h3 class="modal-confirm-title">Confirmez le type de vol</h3>
+      <p class="modal-confirm-text">Vous avez choisi : <strong id="typeVolChoisiLabel"></strong>.<br>Vérifiez selon la <strong>durée de l'escale</strong> :</p>
+      <div class="typevol-compare">
+        <div class="typevol-compare-card" id="cmpTransit">
+          <div class="typevol-compare-head">🛫 Transit</div>
+          <div class="typevol-compare-body">Nettoyage <strong>transit</strong> — escale de <strong>moins de 1h15</strong> (petits et moyens porteurs) ou <strong>moins de 1h45</strong> (gros porteurs).</div>
+        </div>
+        <div class="typevol-compare-card" id="cmpStop">
+          <div class="typevol-compare-head">🛬 Stop Cmn</div>
+          <div class="typevol-compare-body">Nettoyage <strong>complet</strong> — escale <strong>supérieure à 1h15</strong> (petits et moyens porteurs) ou <strong>supérieure à 1h45</strong> (gros porteurs).</div>
+        </div>
+      </div>
+      <p class="typevol-seuil" id="typeVolSeuil"></p>
+      <div class="modal-confirm-actions">
+        <button class="btn btn-outline" id="btnChangerTypeVol">Changer</button>
+        <button class="btn btn-primary" id="btnConfirmerTypeVol">Confirmer ce type</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL CONFIRMATION RETOUR -->
   <div id="modalRetour" class="modal-overlay" style="display:none;">
     <div class="modal modal-confirm">

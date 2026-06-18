@@ -193,6 +193,7 @@ async function init() {
   ]);
   initDashboardFilters();
   initAnalyseFilters();
+  setupDashboardPdf();
   loadDashboard();
   if (!isDemoMode) setupRealtime();
   setupModals();
@@ -483,6 +484,187 @@ async function loadDashboard() {
   } catch (err) {
     console.error('Dashboard error:', err);
   }
+}
+
+// ---- EXPORT PDF DU TABLEAU DE BORD ----
+
+// Texte récapitulatif des filtres actifs (pour l'en-tête du PDF)
+function _dbFiltersSubtitle() {
+  const f = dashboardFilters;
+  const parts = [];
+  if (f.month) {
+    const [y, m] = f.month.split('-');
+    parts.push('Mois : ' + MONTH_NAMES_FULL[parseInt(m) - 1] + ' ' + y);
+  } else {
+    const pt = { today: "Aujourd'hui", '7': '7 derniers jours', '30': '30 derniers jours', all: 'Toutes périodes' };
+    parts.push('Période : ' + (pt[f.period] || f.period));
+  }
+  if (f.typeVol) parts.push('Type : ' + f.typeVol);
+  const selText = (id) => { const s = document.getElementById(id); return s && s.selectedIndex > 0 ? s.options[s.selectedIndex].text : null; };
+  if (f.agentId) { const t = selText('dbFilterAgent'); if (t) parts.push('Agent : ' + t); }
+  if (f.cieCode) { const t = selText('dbFilterCie'); parts.push('Compagnie : ' + (t || f.cieCode)); }
+  return parts.join('   •   ');
+}
+
+function _pdfSafe(s) {
+  return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/→/g, 'au').replace(/[—–]/g, '-').replace(/•/g, '-');
+}
+
+// Couleur de fond utilisée pour la capture (selon le thème)
+function _captureBg(el) {
+  const bg = getComputedStyle(el).backgroundColor;
+  if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg;
+  return _isDarkTheme() ? '#0f172a' : '#f4f6fb';
+}
+
+// Dessine l'en-tête (logo + titre + date + filtres) et renvoie la hauteur occupée (mm)
+async function _drawDashboardPdfHeader(doc, title, subtitle) {
+  const W = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  try {
+    const logo = await fetchImageAsBase64('images/logo.png');
+    doc.addImage(logo, 'PNG', margin, 12, 16, 16);
+  } catch (_) { /* logo optionnel */ }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.setTextColor(190, 30, 45);
+  doc.text(_pdfSafe(title), margin + 20, 20);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(110, 120, 140);
+  doc.text(_pdfSafe('Genere le ' + new Date().toLocaleString('fr-FR')), margin + 20, 26);
+
+  let y = 34;
+  if (subtitle) {
+    doc.setFontSize(9);
+    doc.setTextColor(70, 80, 100);
+    const lines = doc.splitTextToSize(_pdfSafe(subtitle), W - margin * 2);
+    doc.text(lines, margin, y);
+    y += lines.length * 4.5 + 2;
+  }
+  doc.setDrawColor(220, 225, 232);
+  doc.line(margin, y, W - margin, y);
+  return y + 4; // hauteur totale réservée
+}
+
+// Ajoute un canvas dans le PDF, en le découpant sur plusieurs pages A4 si besoin
+function _addCanvasPaged(doc, canvas, headerH, bgColor) {
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const imgW = W - margin * 2;
+  const scale = imgW / canvas.width;           // mm par pixel source
+  const firstAvail = H - headerH - margin;     // hauteur dispo 1re page (mm)
+  const restAvail = H - margin * 2;            // hauteur dispo pages suivantes
+
+  let srcY = 0;
+  let first = true;
+  while (srcY < canvas.height) {
+    const availMm = first ? firstAvail : restAvail;
+    const sliceH = Math.min(canvas.height - srcY, Math.floor(availMm / scale));
+    if (sliceH <= 0) break;
+
+    const tmp = document.createElement('canvas');
+    tmp.width = canvas.width;
+    tmp.height = sliceH;
+    const ctx = tmp.getContext('2d');
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, tmp.width, tmp.height);
+    ctx.drawImage(canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+
+    if (!first) doc.addPage();
+    const topMm = first ? headerH : margin;
+    doc.addImage(tmp.toDataURL('image/png'), 'PNG', margin, topMm, imgW, sliceH * scale);
+
+    srcY += sliceH;
+    first = false;
+  }
+}
+
+// Capture un élément DOM via html2canvas
+async function _captureElement(el, bgColor) {
+  return html2canvas(el, {
+    scale: 2,
+    backgroundColor: bgColor,
+    useCORS: true,
+    logging: false,
+    ignoreElements: (node) => node.classList && node.classList.contains('pdf-ignore'),
+  });
+}
+
+// Export complet du tableau de bord
+async function exportDashboardPdf() {
+  if (!window.jspdf || !window.html2canvas) { showToast('Bibliothèque PDF non chargée. Rechargez la page.', 'error'); return; }
+  const btn = document.getElementById('btnExportDashboardPDF');
+  const view = document.getElementById('viewDashboard');
+  if (!view) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Génération…'; }
+
+  try {
+    const bg = _captureBg(view);
+    const canvas = await _captureElement(view, bg);
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const headerH = await _drawDashboardPdfHeader(doc, 'Tableau de bord', _dbFiltersSubtitle());
+    _addCanvasPaged(doc, canvas, headerH, bg);
+    doc.save('Tableau_de_bord_' + new Date().toISOString().split('T')[0] + '.pdf');
+    showToast('PDF du tableau de bord généré.', 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('Erreur génération PDF : ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+}
+
+// Export d'une seule section (carte)
+async function exportSectionPdf(cardEl, title, btn) {
+  if (!window.jspdf || !window.html2canvas) { showToast('Bibliothèque PDF non chargée. Rechargez la page.', 'error'); return; }
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+
+  try {
+    const bg = _captureBg(cardEl);
+    const canvas = await _captureElement(cardEl, bg);
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const headerH = await _drawDashboardPdfHeader(doc, title, _dbFiltersSubtitle());
+    _addCanvasPaged(doc, canvas, headerH, bg);
+    const safeName = title.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
+    doc.save('Section_' + safeName + '_' + new Date().toISOString().split('T')[0] + '.pdf');
+    showToast('PDF de la section généré.', 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('Erreur génération PDF : ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+}
+
+// Mise en place des boutons PDF (global + par section)
+function setupDashboardPdf() {
+  document.getElementById('btnExportDashboardPDF')?.addEventListener('click', exportDashboardPdf);
+
+  // Injecte un bouton PDF dans l'en-tête de chaque carte du tableau de bord
+  document.querySelectorAll('#viewDashboard .card > .card-header').forEach(header => {
+    if (header.querySelector('.card-pdf-btn')) return;
+    const card = header.closest('.card');
+    const titleEl = header.querySelector('h2, h3');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'card-pdf-btn pdf-ignore';
+    btn.title = 'Exporter cette section en PDF';
+    btn.innerHTML = '<i class="fas fa-file-pdf"></i>';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const title = (titleEl ? titleEl.textContent : 'Section').trim();
+      exportSectionPdf(card, title, btn);
+    });
+    header.appendChild(btn);
+  });
 }
 
 function _barLabelPlugin(id, getData) {

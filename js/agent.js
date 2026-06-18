@@ -667,16 +667,52 @@ function setupFormEntete() {
   const formGrid = document.getElementById('formGrid');
   if (formGrid) formGrid.classList.add('locked');
 
-  // Sélection du type de vol via cartes
+  // Sélection du type de vol via cartes → confirmation avant application
+  let pendingTypeVolCard = null;
+
+  function applyTypeVolSelection(card) {
+    document.querySelectorAll('.type-vol-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    document.getElementById('typeVol').value = card.dataset.value;
+    // Déverrouiller et focus sur le premier champ
+    if (formGrid) formGrid.classList.remove('locked');
+    document.getElementById('dateVol').focus();
+  }
+
+  function openTypeVolConfirm(card) {
+    pendingTypeVolCard = card;
+    const value = card.dataset.value;
+    const isTransit = value.includes('Transit');
+    const isGros = value.includes('Gros');
+    const porteur = card.querySelector('.type-vol-label')?.textContent || (isGros ? 'Gros Porteur' : 'Moyen Porteur');
+    const sousType = card.querySelector('.type-vol-sublabel')?.textContent || (isTransit ? 'Transit' : 'Stop Cmn');
+
+    const labelEl = document.getElementById('typeVolChoisiLabel');
+    if (labelEl) labelEl.textContent = porteur + ' — ' + sousType;
+
+    document.getElementById('cmpTransit')?.classList.toggle('selected', isTransit);
+    document.getElementById('cmpStop')?.classList.toggle('selected', !isTransit);
+
+    const seuil = isGros ? '1h45' : '1h15';
+    const sens = isTransit ? 'inférieure à' : 'supérieure à';
+    const seuilEl = document.getElementById('typeVolSeuil');
+    if (seuilEl) seuilEl.textContent = `➡ Pour un ${porteur}, ce type correspond à une escale ${sens} ${seuil}.`;
+
+    document.getElementById('modalTypeVol').style.display = 'flex';
+  }
+
   document.querySelectorAll('.type-vol-card').forEach(card => {
-    card.addEventListener('click', () => {
-      document.querySelectorAll('.type-vol-card').forEach(c => c.classList.remove('selected'));
-      card.classList.add('selected');
-      document.getElementById('typeVol').value = card.dataset.value;
-      // Déverrouiller et focus sur le premier champ
-      if (formGrid) formGrid.classList.remove('locked');
-      document.getElementById('dateVol').focus();
-    });
+    card.addEventListener('click', () => openTypeVolConfirm(card));
+  });
+
+  document.getElementById('btnConfirmerTypeVol')?.addEventListener('click', () => {
+    if (pendingTypeVolCard) applyTypeVolSelection(pendingTypeVolCard);
+    document.getElementById('modalTypeVol').style.display = 'none';
+    pendingTypeVolCard = null;
+  });
+  document.getElementById('btnChangerTypeVol')?.addEventListener('click', () => {
+    document.getElementById('modalTypeVol').style.display = 'none';
+    pendingTypeVolCard = null;
   });
 
   // Numéro de vol : chiffres seulement, max 4

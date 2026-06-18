@@ -150,7 +150,12 @@
 
       <!-- ======== TABLEAU DE BORD ======== -->
       <div id="viewDashboard" class="view active">
-        <div class="page-title"><h2>📊 Tableau de bord</h2></div>
+        <div class="page-title page-title-row">
+          <h2>📊 Tableau de bord</h2>
+          <button class="btn btn-outline btn-sm pdf-ignore" id="btnExportDashboardPDF" title="Télécharger tout le tableau de bord en PDF">
+            <i class="fas fa-file-pdf"></i> Exporter en PDF
+          </button>
+        </div>
 
         <!-- Cartes stats -->
         <div class="stats-grid">
@@ -1204,6 +1209,8 @@
   <!-- jsPDF pour archivage PDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <!-- html2canvas pour capture du tableau de bord en PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
   <script type="module" src="js/admin.js"></script>
   <script src="/js/pwa.js"></script>

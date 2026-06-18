@@ -3,7 +3,7 @@
 // Version auto-incrémentée à chaque déploiement via timestamp
 // ============================================================
 
-const CACHE_VERSION = 'v6-20260614';
+const CACHE_VERSION = 'v9-20260618';
 const CACHE_NAME = `controle-cabine-${CACHE_VERSION}`;
 
 // Assets mis en cache pour le mode hors-ligne (images, manifest)
