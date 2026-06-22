@@ -4553,6 +4553,13 @@ async function loadArchiveView() {
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-database"></i> Charge de la base de données</h3></div>
+      <div class="card-body" id="dbUsageBody">
+        <div class="loading-state">Calcul en cours…</div>
+      </div>
+    </div>
+
     <div id="archiveMigrationBanner" style="display:none;" class="archive-migration-banner">
       <div class="archive-migration-inner">
         <i class="fas fa-database"></i>
@@ -4612,7 +4619,73 @@ async function loadArchiveView() {
   setArchivePeriod(7);
 
   await checkArchiveColumn();
+  await loadDbUsage();
   await loadArchiveHistory();
+}
+
+// ── Charge de la base de données ──────────────────────────────
+// Quota disque selon l'offre Supabase (Mo). Plan gratuit = 500 Mo, Pro = 8192 Mo.
+const DB_QUOTA_MB = 500;
+const DB_WARN_PCT = 75;   // seuil d'alerte (jaune)
+const DB_CRIT_PCT = 90;   // seuil critique (rouge)
+// Taille moyenne estimée par ligne (Ko)
+const ROW_KB = { controles: 0.8, vols: 0.6, photos: 0.4 };
+
+async function loadDbUsage() {
+  const el = document.getElementById('dbUsageBody');
+  if (!el) return;
+
+  if (isDemoMode) {
+    el.innerHTML = '<p class="text-muted" style="text-align:center;padding:1rem;">Indisponible en mode démo.</p>';
+    return;
+  }
+
+  try {
+    const [ctrl, vols, photos] = await Promise.all([
+      supabase.from('controles').select('id', { count: 'exact', head: true }),
+      supabase.from('vols').select('id', { count: 'exact', head: true }),
+      supabase.from('photos').select('id', { count: 'exact', head: true }),
+    ]);
+
+    const nCtrl = ctrl.count || 0;
+    const nVols = vols.count || 0;
+    const nPhotos = photos.count || 0;
+
+    // Taille estimée de la base (Mo) — hors fichiers photos (stockés dans Storage)
+    const estMb = (nCtrl * ROW_KB.controles + nVols * ROW_KB.vols + nPhotos * ROW_KB.photos) / 1024;
+    const pct = Math.min(100, (estMb / DB_QUOTA_MB) * 100);
+
+    let color = '#22c55e', label = 'Sain', icon = 'fa-circle-check';
+    if (pct >= DB_CRIT_PCT)      { color = '#ef4444'; label = 'Critique — purgez les anciennes données'; icon = 'fa-triangle-exclamation'; }
+    else if (pct >= DB_WARN_PCT) { color = '#f59e0b'; label = 'Élevée — pensez à archiver'; icon = 'fa-circle-exclamation'; }
+
+    el.innerHTML = `
+      <div class="archive-stats-row">
+        <div class="archive-stat"><span class="archive-stat-value">${nCtrl.toLocaleString('fr-FR')}</span><span class="archive-stat-label">Contrôles</span></div>
+        <div class="archive-stat"><span class="archive-stat-value">${nVols.toLocaleString('fr-FR')}</span><span class="archive-stat-label">Vols</span></div>
+        <div class="archive-stat"><span class="archive-stat-value">${nPhotos.toLocaleString('fr-FR')}</span><span class="archive-stat-label">Photos</span></div>
+        <div class="archive-stat"><span class="archive-stat-value">${estMb.toFixed(1)}</span><span class="archive-stat-label">Mo estimés</span></div>
+      </div>
+
+      <div style="margin:.5rem 0 .35rem;display:flex;justify-content:space-between;font-size:.8rem;color:#94a3b8;">
+        <span>Charge estimée</span>
+        <span style="color:${color};font-weight:700;">${pct.toFixed(1)} % de ${DB_QUOTA_MB} Mo</span>
+      </div>
+      <div style="height:10px;border-radius:6px;background:rgba(148,163,184,.18);overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:${color};transition:width .4s;"></div>
+      </div>
+
+      <div style="margin-top:.75rem;display:flex;align-items:center;gap:.5rem;color:${color};font-weight:600;font-size:.9rem;">
+        <i class="fas ${icon}"></i> ${label}
+      </div>
+      <p class="text-muted" style="margin-top:.4rem;font-size:.75rem;">
+        Estimation des tables (les fichiers photos sont comptés dans le Storage Supabase, à part).
+        Au-delà de ${DB_WARN_PCT} %, archivez puis purgez les périodes les plus anciennes ci-dessous.
+      </p>
+    `;
+  } catch (e) {
+    el.innerHTML = '<p class="text-muted" style="text-align:center;padding:1rem;">Impossible de calculer la charge.</p>';
+  }
 }
 
 async function checkArchiveColumn() {
