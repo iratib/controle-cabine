@@ -70,6 +70,10 @@
           <span class="sidebar-user-status" id="sidebarUserRole">…</span>
         </div>
       </div>
+      <a href="#" class="sidebar-link" id="btnChangerMdpAdmin" style="margin:.25rem .5rem .5rem;">
+        <span class="sidebar-icon"><i class="fas fa-key"></i></span>
+        <span>Changer mot de passe</span>
+      </a>
 
       <!-- Navigation -->
       <div class="sidebar-section-label">GLOBAL</div>
@@ -1207,6 +1211,35 @@
         <button class="btn btn-primary" id="btnConfirmerEditVol" style="background:#16a34a;border-color:#16a34a;">
           <span id="btnEditVolText">Enregistrer</span>
           <span id="btnEditVolSpinner" style="display:none;">…</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CHANGER MOT DE PASSE -->
+  <div id="modalChangerMdpAdmin" class="modal-overlay" style="display:none;">
+    <div class="modal">
+      <div class="modal-header"><h3><i class="fas fa-key"></i> Changer mon mot de passe</h3></div>
+      <div class="modal-body">
+        <div class="alert" style="background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:8px;padding:10px 14px;font-size:0.85rem;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+          <i class="fas fa-exclamation-triangle"></i>
+          Le mot de passe doit être saisi en <strong>MAJUSCULES</strong>. Il sera automatiquement converti.
+        </div>
+        <div class="form-group">
+          <label>Nouveau mot de passe *</label>
+          <input type="password" id="mdpNouveauFieldAdmin" placeholder="Minimum 6 caractères" oninput="this.value = this.value.toUpperCase()" />
+        </div>
+        <div class="form-group">
+          <label>Confirmer le mot de passe *</label>
+          <input type="password" id="mdpConfirmFieldAdmin" placeholder="Répéter le mot de passe" oninput="this.value = this.value.toUpperCase()" />
+        </div>
+        <div id="mdpModalErrorAdmin" class="alert alert-danger" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btnAnnulerMdpAdmin">Annuler</button>
+        <button class="btn btn-primary" id="btnConfirmerMdpAdmin">
+          <span id="btnConfirmerMdpAdminText">Enregistrer</span>
+          <span id="btnConfirmerMdpAdminSpinner" style="display:none;">…</span>
         </button>
       </div>
     </div>

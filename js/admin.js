@@ -213,9 +213,77 @@ async function init() {
   setupModals();
   setupExport();
   setupNotifications();
+  setupChangerMdpAdmin();
 
   document.getElementById('btnMenu').addEventListener('click', () => {
     document.getElementById('sidebar').classList.toggle('sidebar-open');
+  });
+}
+
+// ---- CHANGER MON MOT DE PASSE (admin / chef / superviseur) ----
+function setupChangerMdpAdmin() {
+  const btnOpen = document.getElementById('btnChangerMdpAdmin');
+  const modal   = document.getElementById('modalChangerMdpAdmin');
+  if (!btnOpen || !modal) return;
+
+  // Compte partagé "Suivi KPI" : ne pas autoriser le changement (verrouillerait tout le monde).
+  if (isReadOnlyRole()) { btnOpen.style.display = 'none'; return; }
+
+  const errEl   = document.getElementById('mdpModalErrorAdmin');
+  const btnAnn  = document.getElementById('btnAnnulerMdpAdmin');
+  const btnConf = document.getElementById('btnConfirmerMdpAdmin');
+  const champNew = document.getElementById('mdpNouveauFieldAdmin');
+  const champCfm = document.getElementById('mdpConfirmFieldAdmin');
+
+  btnOpen.addEventListener('click', (e) => {
+    e.preventDefault();
+    champNew.value = '';
+    champCfm.value = '';
+    errEl.style.display = 'none';
+    modal.style.display = 'flex';
+    document.getElementById('sidebar').classList.remove('sidebar-open');
+  });
+
+  btnAnn?.addEventListener('click', () => { modal.style.display = 'none'; });
+
+  btnConf?.addEventListener('click', async () => {
+    const nouveau = champNew.value.trim();
+    const confirm = champCfm.value.trim();
+    errEl.style.display = 'none';
+
+    if (!nouveau || nouveau.length < 6) {
+      errEl.textContent = 'Le mot de passe doit contenir au moins 6 caractères.';
+      errEl.style.display = 'block'; return;
+    }
+    if (nouveau !== confirm) {
+      errEl.textContent = 'Les deux mots de passe ne correspondent pas.';
+      errEl.style.display = 'block'; return;
+    }
+    if (isDemoMode) {
+      modal.style.display = 'none';
+      showToast('Mot de passe modifié (démo).', 'success', 4000);
+      return;
+    }
+
+    const btnText    = document.getElementById('btnConfirmerMdpAdminText');
+    const btnSpinner = document.getElementById('btnConfirmerMdpAdminSpinner');
+    btnConf.disabled = true;
+    btnText.style.display = 'none';
+    btnSpinner.style.display = 'inline';
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password: nouveau });
+      if (error) throw error;
+      modal.style.display = 'none';
+      showToast('Mot de passe modifié avec succès.', 'success', 4000);
+    } catch (err) {
+      errEl.textContent = err.message || 'Erreur lors du changement de mot de passe.';
+      errEl.style.display = 'block';
+    } finally {
+      btnConf.disabled = false;
+      btnText.style.display = 'inline';
+      btnSpinner.style.display = 'none';
+    }
   });
 }
 
