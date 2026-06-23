@@ -1607,22 +1607,43 @@ window.adminViewFiche = async function(volId, numero, date) {
 // ---- PAR AGENT ----
 
 function setupParAgent() {
-  const select = document.getElementById('selectAgentDetail');
+  const select     = document.getElementById('selectAgentDetail');
   const selectMois = document.getElementById('selectAgentMois');
+  const dateDe     = document.getElementById('selectAgentDateDe');
+  const dateA      = document.getElementById('selectAgentDateA');
+
+  // Construit la plage : la plage de dates Du/Au est prioritaire sur le Mois.
+  const buildRange = () => {
+    const de = dateDe?.value, a = dateA?.value;
+    if (de || a) return { first: de || '1900-01-01', last: a || '2999-12-31' };
+    const m = selectMois?.value;
+    return m ? monthToRange(m) : null;
+  };
+
   const reload = async () => {
     const agentId = select.value;
     if (!agentId) { document.getElementById('agentDetailContent').innerHTML = ''; return; }
-    await loadAgentDetail(agentId, selectMois?.value || '');
+    await loadAgentDetail(agentId, buildRange());
   };
+
   select.addEventListener('change', reload);
-  selectMois?.addEventListener('change', reload);
+  // Mois ↔ Du/Au s'excluent : choisir l'un remet l'autre à zéro.
+  selectMois?.addEventListener('change', () => {
+    if (selectMois.value) { if (dateDe) dateDe.value = ''; if (dateA) dateA.value = ''; }
+    reload();
+  });
+  const onDate = () => {
+    if ((dateDe?.value || dateA?.value) && selectMois) selectMois.value = '';
+    reload();
+  };
+  dateDe?.addEventListener('change', onDate);
+  dateA?.addEventListener('change', onDate);
 }
 
-async function loadAgentDetail(agentId, month = '') {
+async function loadAgentDetail(agentId, range = null) {
   const container = document.getElementById('agentDetailContent');
   container.innerHTML = '<div class="loading-state">Chargement…</div>';
 
-  const range = month ? monthToRange(month) : null;
   let volsList, ncList;
   let totalVols = 0, totalC = 0, totalNC = 0;
 
