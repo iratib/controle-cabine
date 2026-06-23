@@ -239,7 +239,7 @@ alter table public.sla_config enable row level security;
 
 create policy "Admin gère SLA"
   on public.sla_config for all
-  using (public.get_my_role() in ('admin', 'chef', 'superviseur'));
+  using (public.get_my_role() in ('admin', 'chef'));
 
 create policy "Lecture SLA authentifié"
   on public.sla_config for select

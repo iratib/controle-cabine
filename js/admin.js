@@ -3529,9 +3529,18 @@ async function loadSlaConfigView() {
   renderSlaConfigGrid(SLA_CATEGORIES_STOP,    'sla_detail_stop',    'Stop');
   const btnT = document.getElementById('btnSaveSlaTransit');
   const btnS = document.getElementById('btnSaveSlaStop');
-  if (btnT) btnT.onclick = () => saveSlaConfig(SLA_CATEGORIES_TRANSIT, 'sla_detail_transit', 'Transit');
-  if (btnS) btnS.onclick = () => saveSlaConfig(SLA_CATEGORIES_STOP,    'sla_detail_stop',    'Stop');
+  // Configuration SLA réservée à admin / chef (superviseur = consultation seule).
+  if (!canEditSla()) {
+    if (btnT) btnT.style.display = 'none';
+    if (btnS) btnS.style.display = 'none';
+  } else {
+    if (btnT) btnT.onclick = () => saveSlaConfig(SLA_CATEGORIES_TRANSIT, 'sla_detail_transit', 'Transit');
+    if (btnS) btnS.onclick = () => saveSlaConfig(SLA_CATEGORIES_STOP,    'sla_detail_stop',    'Stop');
+  }
 }
+
+// Seuls admin et chef peuvent modifier la configuration SLA.
+function canEditSla() { return ['admin', 'chef'].includes(currentUser?.role); }
 
 const _slaCritere = { Transit: 'temps', Stop: 'temps' };
 
@@ -3790,6 +3799,7 @@ function updateCatTotal(key) {
 }
 
 async function saveSlaConfig(cats, storageKey, suffix) {
+  if (!canEditSla()) { showToast("Vous n'avez pas le droit de modifier la configuration SLA.", 'error'); return; }
   const btn    = document.getElementById(`btnSaveSla${suffix}`);
   const status = document.getElementById(`slaSaveStatus${suffix}`);
   btn.disabled = true;
