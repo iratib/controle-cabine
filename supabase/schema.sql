@@ -13,7 +13,7 @@ create table if not exists public.profiles (
   email text unique not null,
   nom text not null,
   matricule text,
-  role text not null check (role in ('admin', 'chef', 'superviseur', 'agent')),
+  role text not null check (role in ('admin', 'chef', 'superviseur', 'agent', 'suivi_kpi')),
   actif boolean default true,
   created_at timestamptz default now()
 );

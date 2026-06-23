@@ -152,6 +152,11 @@ function getFicheStructure(typeVol) {
 
 let currentUser = null;
 let allAgents = [];
+
+// Profil "Suivi KPI" : consultation seule (aucune écriture autorisée).
+// La garantie forte est la RLS (policies SELECT only) ; ce helper masque l'UI.
+function isReadOnlyRole() { return currentUser?.role === 'suivi_kpi'; }
+function canEditData()   { return !isReadOnlyRole(); }
 let realtimeSub = null;
 let dashboardFilters = { period: '30', typeVol: '', agentId: '', month: '', cieCode: '' };
 let allCompagnies = [];
@@ -176,7 +181,7 @@ async function init() {
   document.getElementById('btnLogout').addEventListener('click', logout);
 
   // Label rôle sidebar
-  const roleLabels = { admin: 'ADMINISTRATEUR', chef: 'CHEF DÉPARTEMENT', superviseur: 'SUPERVISEUR', agent: 'AGENT' };
+  const roleLabels = { admin: 'ADMINISTRATEUR', chef: 'CHEF DÉPARTEMENT', superviseur: 'SUPERVISEUR', agent: 'AGENT', suivi_kpi: 'SUIVI KPI' };
   const sidebarRole = document.getElementById('sidebarUserRole');
   if (sidebarRole) sidebarRole.textContent = roleLabels[currentUser.role] || currentUser.role.toUpperCase();
 
@@ -184,6 +189,15 @@ async function init() {
   if (currentUser.role !== 'admin') {
     const navAgents = document.getElementById('navAgents');
     if (navAgents) navAgents.style.display = 'none';
+  }
+
+  // Profil "Suivi KPI" : consultation seule → masquer Export, Archivage
+  // et neutraliser les boutons d'écriture statiques.
+  if (isReadOnlyRole()) {
+    document.querySelector('.sidebar-link[data-view="export"]')?.style.setProperty('display', 'none');
+    document.querySelector('.sidebar-link[data-view="archive"]')?.style.setProperty('display', 'none');
+    ['btnAddCie', 'btnAddImmat', 'btnSaveSlaTransit', 'btnSaveSlaStop']
+      .forEach(id => document.getElementById(id)?.style.setProperty('display', 'none'));
   }
 
   setupNavigation();
@@ -844,7 +858,8 @@ function renderChartEvolution(period, fromDate, toDate, month, vols, controles) 
       label = mon.getDate().toString().padStart(2,'0') + '/' + String(mon.getMonth()+1).padStart(2,'0');
     } else {
       key   = v.date_vol;
-      label = v.date_vol.slice(5).replace('-', '/');
+      const [, mm, dd] = v.date_vol.split('-');
+      label = dd + '/' + mm;
     }
     volToGroup[v.id] = key;
     groupLabels[key] = label;
@@ -3269,6 +3284,7 @@ async function renderCieList() {
               <span class="badge ${r.actif ? 'badge-ok' : 'badge-off'}">${r.actif ? 'Actif' : 'Inactif'}</span>
             </td>
             <td style="text-align:center;white-space:nowrap">
+              ${canEditData() ? `
               <select class="cie-logo-select" data-id="${r.id}" title="Changer le logo">
                 <option value="">— Logo —</option>
                 ${LOGO_OPTIONS.map(f => `<option value="${f}" ${r.logo_url === f ? 'selected' : ''}>${f}</option>`).join('')}
@@ -3278,7 +3294,7 @@ async function renderCieList() {
               </button>
               <button class="btn btn-danger btn-xs" style="margin-left:.4rem" onclick="deleteCie('${r.id}', '${r.code}')">
                 <i class="fas fa-trash"></i>
-              </button>
+              </button>` : '<span style="color:var(--text-muted)">—</span>'}
             </td>
           </tr>`).join('')}
       </tbody>
@@ -4443,12 +4459,13 @@ async function renderImmatList() {
               <span class="badge ${r.actif ? 'badge-ok' : 'badge-off'}">${r.actif ? 'Actif' : 'Inactif'}</span>
             </td>
             <td style="text-align:center">
+              ${canEditData() ? `
               <button class="btn btn-outline btn-xs" onclick="toggleImmat('${r.id}', ${r.actif})">
                 <i class="fas fa-${r.actif ? 'ban' : 'check'}"></i> ${r.actif ? 'Désactiver' : 'Activer'}
               </button>
               <button class="btn btn-danger btn-xs" style="margin-left:.4rem" onclick="deleteImmat('${r.id}', '${r.immatriculation}')">
                 <i class="fas fa-trash"></i>
-              </button>
+              </button>` : '<span style="color:var(--text-muted)">—</span>'}
             </td>
           </tr>`).join('')}
       </tbody>

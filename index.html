@@ -360,6 +360,7 @@
           <option value="agent">Agent Contrôle</option>
           <option value="superviseur">Superviseur Cabine</option>
           <option value="chef">Chef de Département</option>
+          <option value="suivi_kpi">Suivi KPI</option>
           <option value="admin">Administrateur</option>
         </select>
         <i class="fas fa-chevron-down role-select-arrow"></i>
@@ -427,7 +428,9 @@
 
     let selectedLoginRole = 'agent';
 
-    const PREFILL_MATRICULE = { chef: 'CHEF-001', admin: 'ADMIN' };
+    const PREFILL_MATRICULE = { chef: 'CHEF-001', admin: 'ADMIN', suivi_kpi: 'SUIVI-KPI' };
+    // Profils sans matricule : connexion par mot de passe seul (compte interne fixe)
+    const NO_MATRICULE_ROLES = ['suivi_kpi'];
 
     window.selectLoginRole = function(role) {
       selectedLoginRole = role;
@@ -435,10 +438,18 @@
         document.getElementById('pw-hint-val').textContent = PASSWORDS[role];
       } else {
         const matriculeInput = document.getElementById('login-matricule');
-        if (PREFILL_MATRICULE[role]) {
+        const matriculeField = document.getElementById('matriculeField');
+        if (NO_MATRICULE_ROLES.includes(role)) {
+          // Pas de matricule visible : on fixe le compte interne en coulisses
+          matriculeInput.value = PREFILL_MATRICULE[role];
+          matriculeField.style.display = 'none';
+          document.getElementById('login-password').focus();
+        } else if (PREFILL_MATRICULE[role]) {
+          matriculeField.style.display = 'block';
           matriculeInput.value = PREFILL_MATRICULE[role];
           document.getElementById('login-password').focus();
         } else {
+          matriculeField.style.display = 'block';
           matriculeInput.value = '';
           matriculeInput.focus();
         }

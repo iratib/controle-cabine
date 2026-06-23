@@ -89,7 +89,8 @@ export async function logout() {
 }
 
 // Rôles autorisés sur chaque page
-const ADMIN_ROLES = ['admin', 'chef', 'superviseur'];
+// 'suivi_kpi' = profil consultation seule (lecture des KPI), routé vers admin.html
+const ADMIN_ROLES = ['admin', 'chef', 'superviseur', 'suivi_kpi'];
 
 function getHomePage(role) {
   return ADMIN_ROLES.includes(role) ? '/admin.html' : '/agent.html';
