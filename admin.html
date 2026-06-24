@@ -217,6 +217,15 @@
             <select id="dbFilterMois" class="db-select"><option value="">Tous les mois</option></select>
           </div>
           <div class="db-filter-group">
+            <span class="db-filter-label">Du / Au</span>
+            <div class="db-daterange">
+              <input type="date" id="dbFilterDateDe" class="db-date" aria-label="Du" />
+              <span class="db-daterange-sep">→</span>
+              <input type="date" id="dbFilterDateA" class="db-date" aria-label="Au" />
+              <button type="button" id="dbFilterDateClear" class="db-date-clear" title="Effacer les dates" aria-label="Effacer les dates"><i class="fas fa-times"></i></button>
+            </div>
+          </div>
+          <div class="db-filter-group">
             <span class="db-filter-label">Agent</span>
             <select id="dbFilterAgent" class="db-select"><option value="">Tous les agents</option></select>
           </div>

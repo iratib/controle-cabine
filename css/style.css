@@ -2990,6 +2990,39 @@ html[data-theme="dark"] .typevol-seuil { background: rgba(227,24,55,.12); color:
 }
 .db-select:focus { border-color: var(--ram-red); }
 
+/* Filtre Du / Au (dashboard) */
+.db-daterange { display: flex; align-items: center; gap: .35rem; }
+.db-date {
+  padding: .3rem .5rem;
+  border-radius: 8px;
+  border: 1.5px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: .8rem;
+  font-weight: 500;
+  outline: none;
+  transition: border-color .15s;
+}
+.db-date:focus { border-color: var(--ram-red); }
+.db-daterange-sep { color: #94a3b8; font-size: .85rem; }
+.db-date-clear {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid #e2e8f0;
+  background: #f8fafc;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all .15s;
+}
+.db-date-clear:hover { border-color: var(--ram-red); color: var(--ram-red); }
+html[data-theme="dark"] .db-date,
+html[data-theme="dark"] .db-date-clear {
+  background: rgba(255,255,255,.04);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
 /* ============================================================
    DONUT CHARTS (DASHBOARD)
    ============================================================ */

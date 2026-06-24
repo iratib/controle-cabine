@@ -158,7 +158,7 @@ let allAgents = [];
 function isReadOnlyRole() { return currentUser?.role === 'suivi_kpi'; }
 function canEditData()   { return !isReadOnlyRole(); }
 let realtimeSub = null;
-let dashboardFilters = { period: '30', typeVol: '', agentId: '', month: '', cieCode: '' };
+let dashboardFilters = { period: '30', typeVol: '', agentId: '', month: '', cieCode: '', dateDe: '', dateA: '' };
 let allCompagnies = [];
 
 // ---- INIT ----
@@ -391,11 +391,28 @@ function populateAgentSelects() {
 // ---- DASHBOARD ----
 
 function initDashboardFilters() {
+  // Vide le filtre Du/Au (utilisé quand on choisit une période ou un mois)
+  const clearDateRange = () => {
+    dashboardFilters.dateDe = '';
+    dashboardFilters.dateA = '';
+    const de = document.getElementById('dbFilterDateDe');
+    const a  = document.getElementById('dbFilterDateA');
+    if (de) de.value = '';
+    if (a)  a.value  = '';
+  };
+
   document.querySelectorAll('#viewDashboard .db-pill').forEach(btn => {
     btn.addEventListener('click', () => {
       dashboardFilters[btn.dataset.filter] = btn.dataset.value;
       btn.closest('.db-pills').querySelectorAll('.db-pill').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      // Une période efface le filtre Du/Au et le mois
+      if (btn.dataset.filter === 'period') {
+        clearDateRange();
+        dashboardFilters.month = '';
+        const mois = document.getElementById('dbFilterMois');
+        if (mois) mois.value = '';
+      }
       loadDashboard();
     });
   });
@@ -411,10 +428,39 @@ function initDashboardFilters() {
     dashboardFilters.month = this.value;
     if (this.value) {
       document.querySelectorAll('.db-pill[data-filter="period"]').forEach(b => b.classList.remove('active'));
+      clearDateRange();
     } else {
       document.querySelector('.db-pill[data-filter="period"][data-value="all"]')?.classList.add('active');
       dashboardFilters.period = 'all';
     }
+    loadDashboard();
+  });
+
+  // Filtre Du / Au — prioritaire sur la période et le mois
+  const onDateChange = () => {
+    const de = document.getElementById('dbFilterDateDe');
+    const a  = document.getElementById('dbFilterDateA');
+    dashboardFilters.dateDe = de?.value || '';
+    dashboardFilters.dateA  = a?.value  || '';
+    if (dashboardFilters.dateDe || dashboardFilters.dateA) {
+      // Désactiver les pilules de période et le mois
+      document.querySelectorAll('.db-pill[data-filter="period"]').forEach(b => b.classList.remove('active'));
+      dashboardFilters.month = '';
+      const mois = document.getElementById('dbFilterMois');
+      if (mois) mois.value = '';
+    } else {
+      // Plus aucune date → revenir à « Tout »
+      document.querySelector('.db-pill[data-filter="period"][data-value="all"]')?.classList.add('active');
+      dashboardFilters.period = 'all';
+    }
+    loadDashboard();
+  };
+  document.getElementById('dbFilterDateDe')?.addEventListener('change', onDateChange);
+  document.getElementById('dbFilterDateA')?.addEventListener('change', onDateChange);
+  document.getElementById('dbFilterDateClear')?.addEventListener('click', () => {
+    clearDateRange();
+    document.querySelector('.db-pill[data-filter="period"][data-value="all"]')?.classList.add('active');
+    dashboardFilters.period = 'all';
     loadDashboard();
   });
 
@@ -444,10 +490,14 @@ function initAnalyseFilters() {
 
 async function loadDashboard() {
   const today = new Date().toISOString().split('T')[0];
-  const { period, typeVol, agentId, month, cieCode } = dashboardFilters;
+  const { period, typeVol, agentId, month, cieCode, dateDe, dateA } = dashboardFilters;
+  const hasDateRange = !!(dateDe || dateA);
 
   let fromDate = null, toDate = null;
-  if (month) {
+  if (hasDateRange) {
+    fromDate = dateDe || null;
+    toDate   = dateA  || null;
+  } else if (month) {
     const range = monthToRange(month);
     fromDate = range.first;
     toDate = range.last;
@@ -457,7 +507,10 @@ async function loadDashboard() {
 
   const titleEl = document.getElementById('chartEvolutionTitle');
   if (titleEl) {
-    if (month) {
+    if (hasDateRange) {
+      const fmt = (s) => { if (!s) return '…'; const [y, m, d] = s.split('-'); return d + '/' + m + '/' + y; };
+      titleEl.textContent = 'Évolution — du ' + fmt(dateDe) + ' au ' + fmt(dateA);
+    } else if (month) {
       const [y, m] = month.split('-');
       titleEl.textContent = 'Évolution — ' + MONTH_NAMES_FULL[parseInt(m) - 1] + ' ' + y;
     } else {
@@ -575,7 +628,10 @@ async function loadDashboard() {
 function _dbFiltersSubtitle() {
   const f = dashboardFilters;
   const parts = [];
-  if (f.month) {
+  if (f.dateDe || f.dateA) {
+    const fmt = (s) => { if (!s) return '…'; const [y, m, d] = s.split('-'); return d + '/' + m + '/' + y; };
+    parts.push('Période : du ' + fmt(f.dateDe) + ' au ' + fmt(f.dateA));
+  } else if (f.month) {
     const [y, m] = f.month.split('-');
     parts.push('Mois : ' + MONTH_NAMES_FULL[parseInt(m) - 1] + ' ' + y);
   } else {
