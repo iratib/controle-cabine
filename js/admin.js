@@ -472,11 +472,11 @@ async function loadDashboard() {
     if (el) { el.textContent = ''; el.classList.add('loading'); }
   });
   // Détruire les instances Chart.js avant rechargement
-  ['chartVolsParAgent','chartConformiteZoneMP','chartConformiteZoneGP','chartEvolution','chartDonutConformite',
+  ['chartVolsParAgent','chartConformiteZoneMP','chartConformiteZoneGP','chartEvolution','chartRepartitionMP','chartRepartitionGP','chartDonutConformite',
    'chartControlesType','chartTypeVol','chartCompagnies'].forEach(id => _destroyChart(id));
 
   const loadingHtml = '<div class="loading-state">Chargement…</div>';
-  ['chartVolsParAgent','chartConformiteZoneMP','chartConformiteZoneGP','chartEvolution','chartDonutConformite',
+  ['chartVolsParAgent','chartConformiteZoneMP','chartConformiteZoneGP','chartEvolution','chartRepartitionMP','chartRepartitionGP','chartDonutConformite',
    'chartControlesType','chartTypeVol','chartCompagnies','topNcList','activiteRecente'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = loadingHtml;
@@ -555,6 +555,7 @@ async function loadDashboard() {
     _safe(() => renderChartVolsParAgent(vols));
     _safe(() => renderChartZones(allControles, vols));
     _safe(() => renderChartEvolution(period, fromDate, toDate, month, vols, allControles));
+    _safe(() => renderChartRepartitionPorteurs(period, fromDate, toDate, month, vols));
     _safe(() => renderChartDonutConformite(C, NC));
     _safe(() => renderChartControlesType(vols, allControles));
     _safe(() => renderChartTypeVol(vols, allControles));
@@ -1213,6 +1214,109 @@ function renderChartControlesType(vols, controles) {
         y: { grid: { display: false } }
       }
     }
+  });
+}
+
+// Répartition des vols par porteur (MP / GP), décliné Transit / Stop CMN — en nombre, sur la durée
+function renderChartRepartitionPorteurs(period, fromDate, toDate, month, vols) {
+  const defs = [
+    { id: 'chartRepartitionMP', transit: 'Moyen Porteur Transit', stop: 'Moyen Porteur Stop Cmn', colors: ['#e57282', '#f59e0b'] },
+    { id: 'chartRepartitionGP', transit: 'Gros Porteur Transit',  stop: 'Gros Porteur Stop Cmn',  colors: ['#3b82f6', '#8b5cf6'] },
+  ];
+
+  // Même regroupement temporel que le graphe d'évolution : par mois si « tout », sinon par jour
+  const useMonth = period === 'all' || (!month && !fromDate);
+  const groupLabels = {};
+  const volGroup = {};
+  (vols || []).forEach(v => {
+    if (!v.date_vol) return;
+    let key, label;
+    if (useMonth) {
+      key = v.date_vol.slice(0, 7);
+      const [y, m] = key.split('-');
+      label = MONTH_LABELS[parseInt(m) - 1] + ' ' + y;
+    } else {
+      key = v.date_vol;
+      const [, mm, dd] = v.date_vol.split('-');
+      label = dd + '/' + mm;
+    }
+    volGroup[v.id] = key;
+    groupLabels[key] = label;
+  });
+
+  const keys = Object.keys(groupLabels).sort();
+  const isDark = _isDarkTheme();
+  const labelColor = isDark ? '#e2e8f0' : '#374151';
+
+  defs.forEach(def => {
+    const container = document.getElementById(def.id);
+    if (!container) return;
+
+    // Compter les vols Transit / Stop par tranche de temps
+    const transitData = keys.map(() => 0);
+    const stopData    = keys.map(() => 0);
+    const idx = Object.fromEntries(keys.map((k, i) => [k, i]));
+    (vols || []).forEach(v => {
+      const i = idx[volGroup[v.id]];
+      if (i === undefined) return;
+      if (v.type_vol === def.transit) transitData[i]++;
+      else if (v.type_vol === def.stop) stopData[i]++;
+    });
+
+    if (!keys.length || transitData.every(n => n === 0) && stopData.every(n => n === 0)) {
+      _destroyChart(def.id);
+      container.innerHTML = '<div class="empty-state">Aucune donnée</div>';
+      return;
+    }
+
+    const datalabels = {
+      anchor: 'end', align: 'end', offset: 0,
+      color: labelColor,
+      font: { weight: 'bold', size: 11 },
+      formatter: v => v > 0 ? v : '',
+    };
+
+    const canvas = _makeCanvas(container, 200);
+    _charts[def.id] = new Chart(canvas, {
+      type: 'bar',
+      plugins: [ChartDataLabels],
+      data: {
+        labels: keys.map(k => groupLabels[k]),
+        datasets: [
+          {
+            label: 'Transit',
+            data: transitData,
+            backgroundColor: def.colors[0] + 'cc',
+            hoverBackgroundColor: def.colors[0],
+            borderRadius: 4,
+            borderSkipped: false,
+            datalabels,
+          },
+          {
+            label: 'Stop CMN',
+            data: stopData,
+            backgroundColor: def.colors[1] + 'cc',
+            hoverBackgroundColor: def.colors[1],
+            borderRadius: 4,
+            borderSkipped: false,
+            datalabels,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { top: 18 } },
+        plugins: {
+          legend: { display: true, position: 'bottom', labels: { color: labelColor, boxWidth: 12, font: { size: 11 } } },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label} : ${ctx.parsed.y} vol${ctx.parsed.y !== 1 ? 's' : ''}` } }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: labelColor, font: { weight: '600', size: 10 } } },
+          y: { beginAtZero: true, ticks: { precision: 0, color: isDark ? '#94a3b8' : '#6b7280' }, grid: { color: _gridColor() } }
+        }
+      }
+    });
   });
 }
 

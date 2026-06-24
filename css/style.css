@@ -1411,6 +1411,25 @@ html[data-theme="dark"] .card-pdf-btn:hover { background: var(--ram-red); }
 .zone-badge-mp { background: rgba(99,102,241,.15); color: #6366f1; }
 .zone-badge-gp { background: rgba(245,158,11,.15);  color: #d97706; }
 .chart-full .card-body { min-height: 320px; justify-content: flex-start; }
+
+/* Répartition des vols par porteur (Transit / Stop CMN) */
+.repartition-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  width: 100%;
+}
+.repartition-title {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: .9375rem; font-weight: 600; color: #374151;
+  margin-bottom: .75rem;
+}
+html[data-theme="dark"] .repartition-title { color: #e2e8f0; }
+.repartition-canvas { position: relative; width: 100%; height: 220px; }
+@media (max-width: 640px) {
+  .repartition-grid { grid-template-columns: 1fr; }
+}
+
 /* Legacy — conservé pour compatibilité */
 .charts-grid {
   display: grid;
