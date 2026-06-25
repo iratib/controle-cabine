@@ -181,7 +181,7 @@ async function init() {
   document.getElementById('btnLogout').addEventListener('click', logout);
 
   // Label rôle sidebar
-  const roleLabels = { admin: 'ADMINISTRATEUR', chef: 'CHEF DÉPARTEMENT', superviseur: 'SUPERVISEUR', agent: 'AGENT', suivi_kpi: 'SUIVI KPI' };
+  const roleLabels = { admin: 'ADMINISTRATEUR', chef: 'CHEF DÉPARTEMENT', manager: 'MANAGER', superviseur: 'SUPERVISEUR', agent: 'AGENT', suivi_kpi: 'SUIVI KPI' };
   const sidebarRole = document.getElementById('sidebarUserRole');
   if (sidebarRole) sidebarRole.textContent = roleLabels[currentUser.role] || currentUser.role.toUpperCase();
 
@@ -1690,8 +1690,8 @@ async function loadTousControles(filters = {}) {
           <td>${badge}</td>
           <td class="actions-cell">
             <button class="btn btn-outline btn-xs" onclick="adminViewFiche('${vol.id}', '${vol.numero_vol}', '${vol.date_vol}')">Voir</button>
-            ${['admin','chef'].includes(currentUser?.role) && vol.statut === 'soumis' ? `<button class="btn btn-outline btn-xs" style="color:#16a34a;border-color:#16a34a;" onclick="adminEditVol('${vol.id}','${vol.numero_vol.replace(/'/g,"\\'")}','${vol.date_vol}','${(vol.immatriculation||'').replace(/'/g,"\\'")}','${vol.type_vol}','${vol.heure_debut||''}','${vol.heure_fin||''}')"><i class="fas fa-pen"></i></button>` : ''}
-            ${['admin','chef'].includes(currentUser?.role) ? `<button class="btn btn-danger btn-xs" onclick="adminConfirmDeleteVol('${vol.id}','${vol.numero_vol}')">🗑</button>` : ''}
+            ${['admin','chef','manager'].includes(currentUser?.role) && vol.statut === 'soumis' ? `<button class="btn btn-outline btn-xs" style="color:#16a34a;border-color:#16a34a;" onclick="adminEditVol('${vol.id}','${vol.numero_vol.replace(/'/g,"\\'")}','${vol.date_vol}','${(vol.immatriculation||'').replace(/'/g,"\\'")}','${vol.type_vol}','${vol.heure_debut||''}','${vol.heure_fin||''}')"><i class="fas fa-pen"></i></button>` : ''}
+            ${['admin','chef','manager'].includes(currentUser?.role) ? `<button class="btn btn-danger btn-xs" onclick="adminConfirmDeleteVol('${vol.id}','${vol.numero_vol}')">🗑</button>` : ''}
           </td>
         </tr>
       `;
@@ -1883,9 +1883,14 @@ async function loadAgentDetail(agentId, range = null) {
       return c.conformite === 'NC' && vol?.agent_id === agentId;
     }).map(c => ({ zone: c.zone, point_controle: c.point_controle }));
     totalVols = volsList.length;
-    volsList.forEach(v => (v.controles || []).forEach(c => {
-      if (c.conformite === 'C') totalC++; else if (c.conformite === 'NC') totalNC++;
-    }));
+    volsList.forEach(v => {
+      let firstAt = null;
+      (v.controles || []).forEach(c => {
+        if (c.conformite === 'C') totalC++; else if (c.conformite === 'NC') totalNC++;
+        if (c.created_at && (!firstAt || c.created_at < firstAt)) firstAt = c.created_at;
+      });
+      v._realStart = firstAt;
+    });
   } else {
     // 1 — Stats globales via RPC (totalVols, totalC, totalNC en 1 requête)
     const [{ data: statsData }, { data: volsData }] = await Promise.all([
@@ -1896,7 +1901,7 @@ async function loadAgentDetail(agentId, range = null) {
       }),
       (() => {
         let q = supabase.from('vols')
-          .select('id, numero_vol, date_vol, type_vol, statut')
+          .select('id, numero_vol, date_vol, type_vol, statut, heure_debut')
           .eq('agent_id', agentId).order('date_vol', { ascending: false }).limit(1000);
         if (range) q = q.gte('date_vol', range.first).lte('date_vol', range.last);
         return q;
@@ -1912,22 +1917,34 @@ async function loadAgentDetail(agentId, range = null) {
     // 2 — Contrôles des vols affichés (pour colonnes C/NC du tableau + top NC)
     const displayIds = volsList.map(v => v.id);
     const displayControles = displayIds.length > 0
-      ? await fetchControlesForVols(displayIds, 'conformite, zone, point_controle, vol_id')
+      ? await fetchControlesForVols(displayIds, 'conformite, zone, point_controle, vol_id, created_at')
       : [];
 
     const byVol = {};
     displayControles.forEach(c => {
-      if (!byVol[c.vol_id]) byVol[c.vol_id] = { C: 0, NC: 0 };
+      if (!byVol[c.vol_id]) byVol[c.vol_id] = { C: 0, NC: 0, firstAt: null };
       if (c.conformite === 'C')       byVol[c.vol_id].C++;
       else if (c.conformite === 'NC') byVol[c.vol_id].NC++;
+      // Heure réelle = horodatage du tout premier point de contrôle saisi pour ce vol
+      if (c.created_at && (!byVol[c.vol_id].firstAt || c.created_at < byVol[c.vol_id].firstAt)) {
+        byVol[c.vol_id].firstAt = c.created_at;
+      }
     });
-    volsList.forEach(v => { v._C = (byVol[v.id] || {}).C || 0; v._NC = (byVol[v.id] || {}).NC || 0; });
+    volsList.forEach(v => {
+      v._C = (byVol[v.id] || {}).C || 0;
+      v._NC = (byVol[v.id] || {}).NC || 0;
+      v._realStart = (byVol[v.id] || {}).firstAt || null;
+    });
 
     ncList = displayControles
       .filter(c => c.conformite === 'NC')
       .map(c => ({ zone: c.zone, point_controle: c.point_controle }));
   }
   const taux = (totalC + totalNC) > 0 ? ((totalC / (totalC + totalNC)) * 100).toFixed(1) : '—';
+
+  // Pipeline horaire : charge par tranches de 3h + conflits SLA + écarts déclaré/réel
+  await ensureSlaConfig();
+  const pipelineHtml = buildAgentPipeline(volsList);
 
   const ncCount = {};
   ncList.forEach(c => {
@@ -1956,6 +1973,7 @@ async function loadAgentDetail(agentId, range = null) {
       <div class="stat-card"><div class="stat-icon">📈</div><div class="stat-body"><div class="stat-value">${taux !== '—' ? taux + '%' : '—'}</div><div class="stat-label">Taux conformité</div></div></div>
       <div class="stat-card"><div class="stat-icon">❌</div><div class="stat-body"><div class="stat-value">${totalNC}</div><div class="stat-label">Total NC</div></div></div>
     </div>
+    ${pipelineHtml}
     <div class="card" style="margin-bottom:1.5rem;">
       <div class="card-header"><h3>Historique des vols</h3></div>
       <div class="card-body">
@@ -1978,6 +1996,181 @@ async function loadAgentDetail(agentId, range = null) {
       </div>
     </div>` : ''}
   `;
+}
+
+// ---- PIPELINE HORAIRE PAR AGENT ----
+
+// Charge la config SLA dans le cache si elle ne l'est pas déjà (sans ouvrir la vue SLA)
+async function ensureSlaConfig() {
+  if (isDemoMode || Object.keys(slaConfigCache).length > 0) return;
+  try {
+    const { data } = await supabase.from('sla_config').select('*');
+    (data || []).forEach(r => { slaConfigCache[r.type_vol] = r; });
+  } catch (_) { /* SLA indisponible → conflits calculés avec valeurs par défaut */ }
+}
+
+// "HH:MM:SS" -> minutes depuis minuit (null si vide)
+function timeStrToMinutes(t) {
+  if (!t) return null;
+  const [h, m] = String(t).split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+// timestamptz (UTC) -> { day:'YYYY-MM-DD', min: minutes depuis minuit } en heure locale (Casablanca)
+function tsToLocalDayMin(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return null;
+  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { day, min: d.getHours() * 60 + d.getMinutes() };
+}
+
+const PIPELINE_SLOTS = ['00–03', '03–06', '06–09', '09–12', '12–15', '15–18', '18–21', '21–24'];
+
+function minutesToSlot(min) { return Math.min(7, Math.floor(min / 180)); }
+function minutesToHHMM(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+// Détecte les vols qui se chevauchent dans le temps pour un même agent (fenêtre = début + SLA)
+function detectConflicts(items) {
+  // items: [{ key, day, start, sla }]  (start en minutes, déjà filtré non-null)
+  const conflicts = [];
+  const byDay = {};
+  items.forEach(it => { (byDay[it.day] = byDay[it.day] || []).push(it); });
+  Object.values(byDay).forEach(list => {
+    list.sort((a, b) => a.start - b.start);
+    for (let i = 0; i < list.length - 1; i++) {
+      const end = list[i].start + list[i].sla;
+      for (let j = i + 1; j < list.length; j++) {
+        if (list[j].start < end) conflicts.push([list[i].key, list[j].key]);
+        else break;
+      }
+    }
+  });
+  return conflicts;
+}
+
+function buildAgentPipeline(volsList) {
+  // Normalise chaque vol avec heure déclarée + heure réelle (+ jour de référence)
+  const rows = (volsList || []).map(v => {
+    const sla = getSlaForBroadType(v.type_vol);
+    const declMin = timeStrToMinutes(v.heure_debut);
+    const real = tsToLocalDayMin(v._realStart);
+    return {
+      id: v.id,
+      numero: v.numero_vol,
+      type: v.type_vol,
+      sla,
+      declDay: v.date_vol,
+      declMin,                              // heure déclarée (minutes)
+      realDay: real ? real.day : null,
+      realMin: real ? real.min : null,      // heure réelle (minutes, locale)
+    };
+  });
+
+  if (rows.length === 0) {
+    return `<div class="card" style="margin-bottom:1.5rem;"><div class="card-header"><h3>⏱ Pipeline horaire — charge & conflits</h3></div><div class="card-body"><p class="empty-state">Aucun vol sur la période.</p></div></div>`;
+  }
+
+  // --- Heatmaps charge 3h (déclaré | réel) ---
+  const buildHeatmap = (getDay, getMin, title) => {
+    const grid = {};        // day -> [8 compteurs]
+    let any = false;
+    rows.forEach(r => {
+      const day = getDay(r), min = getMin(r);
+      if (day == null || min == null) return;
+      any = true;
+      if (!grid[day]) grid[day] = new Array(8).fill(0);
+      grid[day][minutesToSlot(min)]++;
+    });
+    const days = Object.keys(grid).sort();
+    if (!any) {
+      return `<div class="pipeline-col" style="flex:1;min-width:300px"><h4>${title}</h4><p class="empty-state" style="font-size:.85rem">Aucune donnée.</p></div>`;
+    }
+    const maxCell = Math.max(...days.flatMap(d => grid[d]));
+    const cellHtml = (n) => {
+      if (!n) return '<td style="text-align:center;color:#cbd5e1">·</td>';
+      const intensity = maxCell > 0 ? n / maxCell : 0;
+      const bg = n > 1 ? `rgba(220,38,38,${0.25 + intensity * 0.55})` : `rgba(37,99,235,${0.18 + intensity * 0.4})`;
+      const color = intensity > 0.55 || n > 1 ? '#fff' : '#1e293b';
+      const title = n > 1 ? ' title="Plusieurs vols dans le même créneau"' : '';
+      return `<td style="text-align:center;background:${bg};color:${color};font-weight:600"${title}>${n}</td>`;
+    };
+    const head = `<tr><th style="text-align:left">Jour</th>${PIPELINE_SLOTS.map(s => `<th style="font-size:.7rem">${s}</th>`).join('')}</tr>`;
+    const body = days.map(d => `<tr><td style="white-space:nowrap">${formatDate(d)}</td>${grid[d].map(cellHtml).join('')}</tr>`).join('');
+    return `<div class="pipeline-col" style="flex:1;min-width:300px"><h4>${title}</h4><div class="table-responsive"><table class="data-table" style="font-size:.85rem"><thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;
+  };
+
+  const heatDecl = buildHeatmap(r => r.declDay, r => r.declMin, '📋 Déclaré (heure d\'opération)');
+  const heatReal = buildHeatmap(r => r.realDay, r => r.realMin, '⏱ Réel (1er contrôle saisi)');
+
+  // --- Conflits SLA (déclaré & réel) ---
+  const labelOf = {};
+  rows.forEach(r => { labelOf[r.id] = r.numero; });
+  const declItems = rows.filter(r => r.declMin != null).map(r => ({ key: r.id, day: r.declDay, start: r.declMin, sla: r.sla }));
+  const realItems = rows.filter(r => r.realMin != null).map(r => ({ key: r.id, day: r.realDay, start: r.realMin, sla: r.sla }));
+  const declConf = detectConflicts(declItems);
+  const realConf = detectConflicts(realItems);
+  const confKey = (p) => p.slice().sort().join('|');
+  const declSet = new Set(declConf.map(confKey));
+  const realSet = new Set(realConf.map(confKey));
+  const allConf = new Map();
+  [...declConf, ...realConf].forEach(p => allConf.set(confKey(p), p));
+  const conflictRows = [...allConf.values()].map(p => {
+    const k = confKey(p);
+    const inD = declSet.has(k), inR = realSet.has(k);
+    const tag = inD && inR ? '<span class="badge-nc-count">déclaré + réel</span>'
+      : inD ? '<span class="badge-nc-count" style="background:#f59e0b">déclaré seul</span>'
+      : '<span class="badge-nc-count" style="background:#6366f1">réel seul</span>';
+    return `<tr><td>${labelOf[p[0]]} ↔ ${labelOf[p[1]]}</td><td>${tag}</td></tr>`;
+  }).join('');
+  const conflictsCard = allConf.size === 0
+    ? '<p class="empty-state" style="font-size:.85rem;margin:0">Aucun chevauchement horaire détecté ✅</p>'
+    : `<table class="data-table" style="font-size:.85rem"><thead><tr><th>Vols en conflit</th><th>Détecté sur</th></tr></thead><tbody>${conflictRows}</tbody></table>`;
+
+  // --- Écarts déclaré vs réel ---
+  const ecartRows = rows.map(r => {
+    const declTxt = r.declMin != null ? minutesToHHMM(r.declMin) : '—';
+    const realTxt = r.realMin != null ? minutesToHHMM(r.realMin) : '—';
+    let ecartTxt = '—', style = '';
+    if (r.declMin != null && r.realMin != null && r.declDay === r.realDay) {
+      const diff = r.realMin - r.declMin;
+      const abs = Math.abs(diff);
+      ecartTxt = `${diff >= 0 ? '+' : '−'}${abs} min`;
+      if (abs >= 60) style = 'background:rgba(220,38,38,.15);font-weight:600';
+      else if (abs >= 30) style = 'background:rgba(245,158,11,.18)';
+    } else if (r.declMin != null && r.realMin != null) {
+      ecartTxt = 'jour ≠'; style = 'background:rgba(220,38,38,.15);font-weight:600';
+    }
+    return `<tr><td>${r.numero}</td><td>${formatDate(r.declDay)}</td><td style="text-align:center">${declTxt}</td><td style="text-align:center">${realTxt}</td><td style="text-align:center;${style}">${ecartTxt}</td></tr>`;
+  }).join('');
+
+  return `
+    <div class="card" style="margin-bottom:1.5rem;">
+      <div class="card-header"><h3>⏱ Pipeline horaire — charge & conflits</h3></div>
+      <div class="card-body">
+        <p style="font-size:.8rem;color:#64748b;margin-top:0">
+          Nombre de vols démarrant par tranche de 3h. <span style="color:#dc2626;font-weight:600">Rouge</span> = plusieurs vols dans le même créneau (charge à vérifier).
+          Comparez <em>Déclaré</em> et <em>Réel</em> pour repérer les écarts.
+        </p>
+        <div class="pipeline-grids" style="display:flex;gap:1.5rem;flex-wrap:wrap">
+          ${heatDecl}
+          ${heatReal}
+        </div>
+        <h4 style="margin-bottom:.5rem">🔻 Conflits horaires (fenêtre = début + SLA du type de vol)</h4>
+        ${conflictsCard}
+        <h4 style="margin:1.25rem 0 .5rem">↔ Écarts heure déclarée vs heure réelle</h4>
+        <div class="table-responsive">
+          <table class="data-table" style="font-size:.85rem">
+            <thead><tr><th>N° vol</th><th>Date</th><th>Déclaré</th><th>Réel (1er contrôle)</th><th>Écart</th></tr></thead>
+            <tbody>${ecartRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
 }
 
 // ---- NON-CONFORMITÉS ----
@@ -2070,8 +2263,8 @@ document.getElementById('btnFiltrerNC')?.addEventListener('click', () => {
 
 // ---- GESTION AGENTS ----
 
-const ROLE_LABELS = { agent: 'Agent Contrôle', superviseur: 'Superviseur', chef: 'Chef Dept', admin: 'Admin' };
-const ROLE_COLORS = { agent: 'statut-valide', superviseur: 'statut-en-cours', chef: 'statut-soumis', admin: 'statut-rejete' };
+const ROLE_LABELS = { agent: 'Agent Contrôle', superviseur: 'Superviseur', chef: 'Chef Dept', manager: 'Manager', admin: 'Admin' };
+const ROLE_COLORS = { agent: 'statut-valide', superviseur: 'statut-en-cours', chef: 'statut-soumis', manager: 'statut-soumis', admin: 'statut-rejete' };
 
 async function loadAgentsTable() {
   const container = document.getElementById('agentsTable');
@@ -2104,7 +2297,7 @@ async function loadAgentsTable() {
           ? `<button class="btn btn-outline btn-xs btn-danger" onclick="toggleAgent('${a.id}', false)">Désactiver</button>`
           : `<button class="btn btn-success btn-xs" onclick="toggleAgent('${a.id}', true)">Activer</button>`
         }
-        ${(isAdmin || currentUser?.role === 'chef') && a.role === 'agent'
+        ${(isAdmin || ['chef','manager'].includes(currentUser?.role)) && a.role === 'agent'
           ? `<button class="btn btn-warning btn-xs" onclick="resetPasswordAgent('${a.id}','${a.nom.replace(/'/g, "\\'")}')"><i class="fas fa-key"></i> CABINE</button>`
           : ''}
         ${isAdmin && ['agent','superviseur'].includes(a.role)
@@ -3609,7 +3802,7 @@ async function deleteCie(id, code) {
 let adminDeleteVolId = null;
 
 window.adminConfirmDeleteVol = function(volId, numeroVol) {
-  if (!['admin','chef'].includes(currentUser?.role)) return;
+  if (!['admin','chef','manager'].includes(currentUser?.role)) return;
   adminDeleteVolId = volId;
   document.getElementById('adminDeleteVolNumero').textContent = numeroVol;
   document.getElementById('modalAdminDeleteVol').style.display = 'flex';
@@ -3653,7 +3846,7 @@ let _editVolId = null;
 let _editVolFilters = {};
 
 window.adminEditVol = function(volId, numero, date, immat, typeVol, heureDebut, heureFin) {
-  if (!['admin','chef'].includes(currentUser?.role)) return;
+  if (!['admin','chef','manager'].includes(currentUser?.role)) return;
   _editVolId = volId;
   document.getElementById('editVolNumeroTitle').textContent = numero;
   document.getElementById('editVolNumero').value = numero;
@@ -3768,7 +3961,7 @@ async function loadSlaConfigView() {
 }
 
 // Seuls admin et chef peuvent modifier la configuration SLA.
-function canEditSla() { return ['admin', 'chef'].includes(currentUser?.role); }
+function canEditSla() { return ['admin', 'chef', 'manager'].includes(currentUser?.role); }
 
 const _slaCritere = { Transit: 'temps', Stop: 'temps' };
 

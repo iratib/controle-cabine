@@ -13,7 +13,7 @@ create table if not exists public.profiles (
   email text unique not null,
   nom text not null,
   matricule text,
-  role text not null check (role in ('admin', 'chef', 'superviseur', 'agent', 'suivi_kpi')),
+  role text not null check (role in ('admin', 'chef', 'manager', 'superviseur', 'agent', 'suivi_kpi')),
   actif boolean default true,
   created_at timestamptz default now()
 );
@@ -168,7 +168,7 @@ create policy "Voir son profil"
 
 create policy "Admin voit tous les profils"
   on public.profiles for all
-  using (public.get_my_role() in ('admin', 'chef', 'superviseur'));
+  using (public.get_my_role() in ('admin', 'chef', 'manager', 'superviseur'));
 
 -- Policies vols
 create policy "Agent voit ses vols"
@@ -185,7 +185,7 @@ create policy "Agent modifie ses vols en cours"
 
 create policy "Admin voit tous les vols"
   on public.vols for all
-  using (public.get_my_role() in ('admin', 'chef', 'superviseur'));
+  using (public.get_my_role() in ('admin', 'chef', 'manager', 'superviseur'));
 
 -- Policies controles
 create policy "Agent gère ses contrôles"
@@ -197,7 +197,7 @@ create policy "Agent gère ses contrôles"
 
 create policy "Admin voit tous les contrôles"
   on public.controles for all
-  using (public.get_my_role() in ('admin', 'chef', 'superviseur'));
+  using (public.get_my_role() in ('admin', 'chef', 'manager', 'superviseur'));
 
 -- Policies photos
 create policy "Agent gère ses photos"
@@ -209,7 +209,7 @@ create policy "Agent gère ses photos"
 
 create policy "Admin voit toutes les photos"
   on public.photos for all
-  using (public.get_my_role() in ('admin', 'chef', 'superviseur'));
+  using (public.get_my_role() in ('admin', 'chef', 'manager', 'superviseur'));
 
 -- Policies matériels
 create policy "Agent gère ses matériels"
@@ -221,14 +221,14 @@ create policy "Agent gère ses matériels"
 
 create policy "Admin voit tous les matériels"
   on public.materiels_utilises for all
-  using (public.get_my_role() in ('admin', 'chef', 'superviseur'));
+  using (public.get_my_role() in ('admin', 'chef', 'manager', 'superviseur'));
 
 -- Policies compagnies
 alter table public.compagnies enable row level security;
 
 create policy "Admin gère compagnies"
   on public.compagnies for all
-  using (public.get_my_role() in ('admin', 'chef', 'superviseur'));
+  using (public.get_my_role() in ('admin', 'chef', 'manager', 'superviseur'));
 
 create policy "Lecture compagnies authentifié"
   on public.compagnies for select
@@ -239,7 +239,7 @@ alter table public.sla_config enable row level security;
 
 create policy "Admin gère SLA"
   on public.sla_config for all
-  using (public.get_my_role() in ('admin', 'chef'));
+  using (public.get_my_role() in ('admin', 'chef', 'manager'));
 
 create policy "Lecture SLA authentifié"
   on public.sla_config for select
@@ -256,7 +256,7 @@ create policy "Lecture photos publique"
 
 create policy "Admin supprime photos storage"
   on storage.objects for delete
-  using (bucket_id = 'photos-controle' and public.get_my_role() in ('admin', 'chef', 'superviseur'));
+  using (bucket_id = 'photos-controle' and public.get_my_role() in ('admin', 'chef', 'manager', 'superviseur'));
 
 -- ============================================================
 -- NOTES : CRÉATION DES COMPTES UTILISATEURS

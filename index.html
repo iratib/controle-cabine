@@ -360,6 +360,7 @@
           <option value="agent">Agent Contrôle</option>
           <option value="superviseur">Superviseur Cabine</option>
           <option value="chef">Chef de Département</option>
+          <option value="manager">Manager</option>
           <option value="suivi_kpi">Suivi KPI</option>
           <option value="admin">Administrateur</option>
         </select>
@@ -418,11 +419,12 @@
     import { supabase, isDemoMode } from './js/supabase-client.js';
 
     /* ── Mots de passe démo ── */
-    const PASSWORDS = { agent: 'AGENT', superviseur: 'SUP001', chef: 'CHEF2026', admin: 'ADMIN2024' };
+    const PASSWORDS = { agent: 'AGENT', superviseur: 'SUP001', chef: 'CHEF2026', manager: 'MGR2026', admin: 'ADMIN2024' };
     const DEMO_CREDS = {
       agent:       { email: 'agent@demo.com', password: 'demo123' },
       superviseur: { email: 'agent@demo.com', password: 'demo123' },
       chef:        { email: 'admin@demo.com', password: 'demo123' },
+      manager:     { email: 'admin@demo.com', password: 'demo123' },
       admin:       { email: 'admin@demo.com', password: 'demo123' }
     };
 
