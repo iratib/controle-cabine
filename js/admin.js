@@ -684,6 +684,12 @@ async function _drawDashboardPdfHeader(doc, title, subtitle) {
   return y + 4; // hauteur totale réservée
 }
 
+// Format/qualité des images insérées dans les PDF.
+// JPEG (au lieu de PNG sans perte) réduit massivement la taille du fichier
+// — le fond est déjà appliqué à la capture, donc l'absence de transparence n'est pas un souci.
+const _PDF_JPEG_QUALITY = 0.7;
+function _canvasToJpeg(canvas) { return canvas.toDataURL('image/jpeg', _PDF_JPEG_QUALITY); }
+
 // Ajoute un canvas dans le PDF, en le découpant sur plusieurs pages A4 si besoin
 function _addCanvasPaged(doc, canvas, headerH, bgColor) {
   const W = doc.internal.pageSize.getWidth();
@@ -711,7 +717,7 @@ function _addCanvasPaged(doc, canvas, headerH, bgColor) {
 
     if (!first) doc.addPage();
     const topMm = first ? headerH : margin;
-    doc.addImage(tmp.toDataURL('image/png'), 'PNG', margin, topMm, imgW, sliceH * scale);
+    doc.addImage(_canvasToJpeg(tmp), 'JPEG', margin, topMm, imgW, sliceH * scale);
 
     srcY += sliceH;
     first = false;
@@ -720,8 +726,9 @@ function _addCanvasPaged(doc, canvas, headerH, bgColor) {
 
 // Capture un élément DOM via html2canvas
 async function _captureElement(el, bgColor) {
+  // scale 1.5 = compromis netteté / poids ; 2 produisait des PDF de plusieurs dizaines de Mo
   return html2canvas(el, {
-    scale: 2,
+    scale: 1.5,
     backgroundColor: bgColor,
     useCORS: true,
     logging: false,
@@ -779,7 +786,7 @@ async function _addCardGrid(doc, cards, startY) {
     // Positionner les cartes côte à côte
     let x = margin;
     for (const p of placed) {
-      doc.addImage(p.canvas.toDataURL('image/png'), 'PNG', x, cursorY, p.w, p.h);
+      doc.addImage(_canvasToJpeg(p.canvas), 'JPEG', x, cursorY, p.w, p.h);
       x += p.w + gutter;
     }
     cursorY += rowH + gutter;
@@ -798,7 +805,7 @@ async function exportDashboardPdf() {
 
   try {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
     let cursorY = await _drawDashboardPdfHeader(doc, 'Tableau de bord', _dbFiltersSubtitle());
 
     const children = [...view.querySelectorAll(':scope > *')];
@@ -837,7 +844,7 @@ async function exportSectionPdf(cardEl, title, btn) {
     const bg = _captureBg(cardEl);
     const canvas = await _captureElement(cardEl, bg);
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
     const headerH = await _drawDashboardPdfHeader(doc, title, _dbFiltersSubtitle());
     _addCanvasPaged(doc, canvas, headerH, bg);
     const safeName = title.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
@@ -907,7 +914,7 @@ function _addCardCanvas(doc, canvas, startY, bgColor) {
   if (imgH <= fullPage) {
     // La carte tient sur une page : nouvelle page si elle déborde de l'espace restant
     if (startY + imgH > H - margin) { doc.addPage(); startY = margin; }
-    doc.addImage(canvas.toDataURL('image/png'), 'PNG', margin, startY, imgW, imgH);
+    doc.addImage(_canvasToJpeg(canvas), 'JPEG', margin, startY, imgW, imgH);
     return startY + imgH + gap;
   }
 
@@ -929,7 +936,7 @@ async function exportAnalysePdf(type) {
 
   try {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
     const titre = 'Analyse ' + (type === 'MP' ? 'Moyen-Porteur' : 'Gros-Porteur');
     let cursorY = await _drawDashboardPdfHeader(doc, titre, _analyseFiltersSubtitle(type));
 
@@ -959,7 +966,7 @@ async function exportAnalyseSectionPdf(cardEl, title, btn, type) {
     const bg = _captureBg(cardEl);
     const canvas = await _captureElement(cardEl, bg);
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
     const headerH = await _drawDashboardPdfHeader(doc, title, _analyseFiltersSubtitle(type));
     _addCanvasPaged(doc, canvas, headerH, bg);
     const safeName = title.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
