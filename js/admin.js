@@ -208,6 +208,7 @@ async function init() {
   initDashboardFilters();
   initAnalyseFilters();
   setupDashboardPdf();
+  setupAnalysePdf();
   loadDashboard();
   if (!isDemoMode) setupRealtime();
   setupModals();
@@ -668,14 +669,9 @@ async function _drawDashboardPdfHeader(doc, title, subtitle) {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
   doc.setTextColor(190, 30, 45);
-  doc.text(_pdfSafe(title), margin + 20, 20);
+  doc.text(_pdfSafe(title), margin + 20, 22);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(110, 120, 140);
-  doc.text(_pdfSafe('Genere le ' + new Date().toLocaleString('fr-FR')), margin + 20, 26);
-
-  let y = 34;
+  let y = 32;
   if (subtitle) {
     doc.setFontSize(9);
     doc.setTextColor(70, 80, 100);
@@ -803,6 +799,129 @@ function setupDashboardPdf() {
       exportSectionPdf(card, title, btn);
     });
     header.appendChild(btn);
+  });
+}
+
+// ---- EXPORT PDF DES ANALYSES MOYEN-PORTEUR / GROS-PORTEUR ----
+
+// Texte récapitulatif des filtres actifs de l'analyse (pour l'en-tête du PDF)
+function _analyseFiltersSubtitle(type) {
+  const p = type.toLowerCase(); // 'mp' | 'gp'
+  const parts = ['Catégorie : ' + (type === 'MP' ? 'Moyen-Porteur' : 'Gros-Porteur')];
+  const fmtMonth = (v) => { if (!v) return '…'; const [y, m] = v.split('-'); return (MONTH_NAMES_FULL[parseInt(m) - 1] || m) + ' ' + y; };
+  const from = document.getElementById(p + 'FilterFrom');
+  const to   = document.getElementById(p + 'FilterTo');
+  if (from || to) parts.push('Période : de ' + fmtMonth(from && from.value) + ' à ' + fmtMonth(to && to.value));
+  const cie = document.getElementById(p + 'FilterCie');
+  if (cie && cie.selectedIndex > 0) parts.push('Compagnie : ' + cie.options[cie.selectedIndex].text);
+  return parts.join('   •   ');
+}
+
+// Ajoute le canvas d'UNE carte sans la couper entre deux pages.
+// Si la carte ne tient pas dans l'espace restant, on passe à la page suivante.
+// Si la carte est plus haute qu'une page entière, on la découpe (cas inévitable).
+// Renvoie la position verticale (mm) après la carte.
+function _addCardCanvas(doc, canvas, startY, bgColor) {
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const gap = 6;
+  const imgW = W - margin * 2;
+  const scale = imgW / canvas.width;
+  const imgH = canvas.height * scale;
+  const fullPage = H - margin * 2;
+
+  if (imgH <= fullPage) {
+    // La carte tient sur une page : nouvelle page si elle déborde de l'espace restant
+    if (startY + imgH > H - margin) { doc.addPage(); startY = margin; }
+    doc.addImage(canvas.toDataURL('image/png'), 'PNG', margin, startY, imgW, imgH);
+    return startY + imgH + gap;
+  }
+
+  // Carte plus haute qu'une page : on la place seule, sur une page neuve, et on la découpe
+  if (startY > margin) doc.addPage();
+  _addCanvasPaged(doc, canvas, margin, bgColor);
+  return H; // force une nouvelle page pour la carte suivante
+}
+
+// Export PDF général : toutes les cartes du rapport, sans qu'une carte soit coupée entre 2 pages
+async function exportAnalysePdf(type) {
+  if (!window.jspdf || !window.html2canvas) { showToast('Bibliothèque PDF non chargée. Rechargez la page.', 'error'); return; }
+  const btn  = document.getElementById('btnExportAnalyse' + type);
+  const view = document.getElementById('viewAnalyse' + type);
+  const blocks = view ? [...view.querySelectorAll('.rapport-section-block')] : [];
+  if (!blocks.length) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Génération…'; }
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const titre = 'Analyse ' + (type === 'MP' ? 'Moyen-Porteur' : 'Gros-Porteur');
+    let cursorY = await _drawDashboardPdfHeader(doc, titre, _analyseFiltersSubtitle(type));
+
+    for (const block of blocks) {
+      const bg = _captureBg(block);
+      const canvas = await _captureElement(block, bg);
+      cursorY = _addCardCanvas(doc, canvas, cursorY, bg);
+    }
+
+    doc.save('Analyse_' + type + '_' + new Date().toISOString().split('T')[0] + '.pdf');
+    showToast('PDF du rapport généré.', 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('Erreur génération PDF : ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+}
+
+// Export PDF d'une seule carte (section) du rapport
+async function exportAnalyseSectionPdf(cardEl, title, btn, type) {
+  if (!window.jspdf || !window.html2canvas) { showToast('Bibliothèque PDF non chargée. Rechargez la page.', 'error'); return; }
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+
+  try {
+    const bg = _captureBg(cardEl);
+    const canvas = await _captureElement(cardEl, bg);
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const headerH = await _drawDashboardPdfHeader(doc, title, _analyseFiltersSubtitle(type));
+    _addCanvasPaged(doc, canvas, headerH, bg);
+    const safeName = title.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
+    doc.save('Analyse_' + type + '_' + safeName + '_' + new Date().toISOString().split('T')[0] + '.pdf');
+    showToast('PDF de la carte généré.', 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('Erreur génération PDF : ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+}
+
+// Mise en place des boutons PDF des analyses (global + par carte)
+function setupAnalysePdf() {
+  ['MP', 'GP'].forEach(type => {
+    document.getElementById('btnExportAnalyse' + type)?.addEventListener('click', () => exportAnalysePdf(type));
+
+    // Injecte un bouton PDF dans l'en-tête de chaque carte du rapport
+    document.querySelectorAll('#viewAnalyse' + type + ' .rapport-section-block').forEach(block => {
+      const hero = block.querySelector('.rapport-hero');
+      if (!hero || hero.querySelector('.card-pdf-btn')) return;
+      const titleEl = hero.querySelector('.rapport-h2');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'card-pdf-btn pdf-ignore';
+      btn.title = 'Exporter cette carte en PDF';
+      btn.innerHTML = '<i class="fas fa-file-pdf"></i>';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const title = (titleEl ? titleEl.textContent : 'Carte').trim();
+        exportAnalyseSectionPdf(block, title, btn, type);
+      });
+      hero.appendChild(btn);
+    });
   });
 }
 

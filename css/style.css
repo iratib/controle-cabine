@@ -2041,6 +2041,8 @@ html[data-theme="dark"] .typevol-seuil { background: rgba(227,24,55,.12); color:
   margin-bottom: 2rem;
   gap: 1rem;
 }
+/* Le bloc titre pousse à gauche pour que le tag + bouton PDF se groupent à droite */
+.rapport-hero > div:first-child { margin-right: auto; }
 
 .rapport-eyebrow {
   font-size: .75rem;
