@@ -2647,6 +2647,14 @@ html[data-theme="dark"] .typevol-seuil { background: rgba(227,24,55,.12); color:
   margin-bottom: .35rem;
 }
 
+.evol-chart-host {
+  position: relative;
+  width: 100%;
+  height: 320px;
+  display: flex;
+  flex-direction: column;
+}
+
 .evol-right {
   display: flex;
   flex-direction: column;

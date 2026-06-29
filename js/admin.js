@@ -729,7 +729,65 @@ async function _captureElement(el, bgColor) {
   });
 }
 
-// Export complet du tableau de bord
+// Nombre de colonnes occupées par une carte de la grille graphiques (sur 3)
+function _cardColSpan(el) {
+  if (el.classList.contains('chart-full')) return 3;
+  if (el.classList.contains('chart-span2')) return 2;
+  return 1;
+}
+
+// Place une grille de cartes en reproduisant la disposition en 3 colonnes du tableau de bord
+// (taille « normale » des graphes), avec saut de page si une rangée ne tient pas.
+async function _addCardGrid(doc, cards, startY) {
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const gutter = 4;
+  const cols = 3;
+  const imgW = W - margin * 2;
+  const colW = (imgW - (cols - 1) * gutter) / cols;
+  let cursorY = startY;
+  let i = 0;
+
+  while (i < cards.length) {
+    // Constituer une rangée (≤ 3 colonnes)
+    const row = [];
+    let used = 0;
+    while (i < cards.length) {
+      const span = Math.min(_cardColSpan(cards[i]), cols);
+      if (used + span > cols) break;
+      row.push({ el: cards[i], span });
+      used += span; i++;
+      if (used === cols) break;
+    }
+
+    // Capturer chaque carte de la rangée et calculer sa taille
+    let rowH = 0;
+    const placed = [];
+    for (const r of row) {
+      const bg = _captureBg(r.el);
+      const canvas = await _captureElement(r.el, bg);
+      const w = r.span * colW + (r.span - 1) * gutter;
+      const h = canvas.height * (w / canvas.width);
+      placed.push({ canvas, w, h });
+      rowH = Math.max(rowH, h);
+    }
+
+    // Saut de page si la rangée déborde
+    if (cursorY + rowH > H - margin) { doc.addPage(); cursorY = margin; }
+
+    // Positionner les cartes côte à côte
+    let x = margin;
+    for (const p of placed) {
+      doc.addImage(p.canvas.toDataURL('image/png'), 'PNG', x, cursorY, p.w, p.h);
+      x += p.w + gutter;
+    }
+    cursorY += rowH + gutter;
+  }
+  return cursorY;
+}
+
+// Export complet du tableau de bord (cartes entières + disposition en colonnes conservée)
 async function exportDashboardPdf() {
   if (!window.jspdf || !window.html2canvas) { showToast('Bibliothèque PDF non chargée. Rechargez la page.', 'error'); return; }
   const btn = document.getElementById('btnExportDashboardPDF');
@@ -739,12 +797,26 @@ async function exportDashboardPdf() {
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Génération…'; }
 
   try {
-    const bg = _captureBg(view);
-    const canvas = await _captureElement(view, bg);
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const headerH = await _drawDashboardPdfHeader(doc, 'Tableau de bord', _dbFiltersSubtitle());
-    _addCanvasPaged(doc, canvas, headerH, bg);
+    let cursorY = await _drawDashboardPdfHeader(doc, 'Tableau de bord', _dbFiltersSubtitle());
+
+    const children = [...view.querySelectorAll(':scope > *')];
+    for (const child of children) {
+      if (child.classList.contains('pdf-ignore')) continue;   // ex. Activité récente
+      if (child.classList.contains('page-title')) continue;   // titre déjà dans l'en-tête PDF
+
+      if (child.classList.contains('charts-main-grid')) {
+        // Grille de graphiques : disposition en 3 colonnes, taille normale
+        const cards = [...child.querySelectorAll(':scope > *')].filter(c => !c.classList.contains('pdf-ignore'));
+        cursorY = await _addCardGrid(doc, cards, cursorY);
+      } else {
+        const bg = _captureBg(child);
+        const canvas = await _captureElement(child, bg);
+        cursorY = _addCardCanvas(doc, canvas, cursorY, bg);
+      }
+    }
+
     doc.save('Tableau_de_bord_' + new Date().toISOString().split('T')[0] + '.pdf');
     showToast('PDF du tableau de bord généré.', 'success');
   } catch (e) {
@@ -787,6 +859,7 @@ function setupDashboardPdf() {
   document.querySelectorAll('#viewDashboard .card > .card-header').forEach(header => {
     if (header.querySelector('.card-pdf-btn')) return;
     const card = header.closest('.card');
+    if (card.classList.contains('pdf-ignore')) return; // exclue du PDF (ex. Activité récente)
     const titleEl = header.querySelector('h2, h3');
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -1136,9 +1209,15 @@ function renderChartEvolution(period, fromDate, toDate, month, vols, controles) 
     partial: false
   }));
 
+  _buildEvolutionChart(container, data);
+}
+
+// Graphe combiné « inspections (barres) + taux de conformité (courbe) ».
+// Partagé par le tableau de bord et les rapports Moyen/Gros-Porteur.
+// data : [{ label, insp, taux }]
+function _buildEvolutionChart(container, data) {
   const canvas = _makeCanvas(container, 280);
   const isDark = _isDarkTheme();
-  const labelColor = isDark ? '#e2e8f0' : '#374151';
 
   _charts[container.id] = new Chart(canvas, {
     type: 'bar',
@@ -3144,95 +3223,6 @@ function renderTypologieDefauts(type, controles) {
 
 const MONTH_LABELS = ['Janv.','Févr.','Mars','Avril','Mai','Juin','Juil.','Août','Sept.','Oct.','Nov.','Déc.'];
 
-function buildEvolBarSVG(data) {
-  const W = 620, H = 230, padL = 50, padR = 20, padT = 30, padB = 45;
-  const cW = W - padL - padR, cH = H - padT - padB;
-  const maxVal = Math.max(...data.map(d => d.insp), 1);
-  const yMax = Math.ceil(maxVal * 1.2 / 100) * 100 || 100;
-  const rawStep = yMax / 5;
-  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
-  const yStep = Math.ceil(rawStep / mag) * mag;
-  const ticks = [];
-  for (let v = 0; v <= yMax + 0.01; v += yStep) ticks.push(Math.round(v));
-
-  const yTickHtml = ticks.map(v => {
-    const y = padT + cH - (v / yMax * cH);
-    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="#e2e8f0" stroke-width="1"/>
-            <text x="${padL - 6}" y="${(y + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="#94a3b8">${v}</text>`;
-  }).join('');
-
-  const n = data.length;
-  const slotW = cW / Math.max(n, 1);
-  const barW = slotW * 0.55;
-
-  const bars = data.map((d, i) => {
-    const x = padL + i * slotW + (slotW - barW) / 2;
-    const bH = Math.max((d.insp / yMax) * cH, 1);
-    const y = padT + cH - bH;
-    const lbl = d.label;
-    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bH.toFixed(1)}" fill="#e57282" rx="3"/>
-            <text x="${(x + barW / 2).toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle" font-size="11" fill="#475569" font-weight="600">${d.insp.toLocaleString('fr-FR')}</text>
-            <text x="${(x + barW / 2).toFixed(1)}" y="${(padT + cH + 22).toFixed(1)}" text-anchor="middle" font-size="11" fill="#334155" font-weight="${d.partial ? '700' : '400'}">${lbl}</text>`;
-  }).join('');
-
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;">
-    ${yTickHtml}
-    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + cH}" stroke="#cbd5e1"/>
-    <line x1="${padL}" y1="${padT + cH}" x2="${W - padR}" y2="${padT + cH}" stroke="#cbd5e1"/>
-    ${bars}
-  </svg>`;
-}
-
-function buildEvolLineSVG(data) {
-  const W = 620, H = 200, padL = 55, padR = 20, padT = 25, padB = 45;
-  const cW = W - padL - padR, cH = H - padT - padB;
-  const valid = data.filter(d => d.taux !== null);
-  if (!valid.length) return '';
-
-  const minT = Math.min(...valid.map(d => d.taux));
-  const yMin = Math.max(0, Math.floor((minT - 0.3) * 10) / 10);
-  const yMax = 100, yRange = yMax - yMin;
-
-  const rawStep = yRange / 5;
-  const yStep = rawStep <= 0.2 ? 0.2 : rawStep <= 0.5 ? 0.5 : rawStep <= 1 ? 0.5 : 1;
-  const ticks = [];
-  for (let v = Math.ceil(yMin / yStep) * yStep; v <= yMax + 0.001; v += yStep) {
-    ticks.push(parseFloat(v.toFixed(1)));
-  }
-
-  const getX = i => padL + i * (cW / Math.max(data.length - 1, 1));
-  const getY = v => v === null ? null : padT + cH - ((v - yMin) / yRange * cH);
-
-  const yTickHtml = ticks.map(v => {
-    const y = getY(v);
-    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="#e2e8f0" stroke-width="1"/>
-            <text x="${padL - 5}" y="${(y + 4).toFixed(1)}" text-anchor="end" font-size="10" fill="#94a3b8">${v}</text>`;
-  }).join('');
-
-  const pts = data.map((d, i) => {
-    const y = getY(d.taux);
-    return y !== null ? `${getX(i).toFixed(1)},${y.toFixed(1)}` : null;
-  }).filter(Boolean).join(' ');
-
-  const dots = data.map((d, i) => {
-    const y = getY(d.taux);
-    if (y === null) return '';
-    const x = getX(i);
-    const above = y < 18;
-    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="#c8102e" stroke="#fff" stroke-width="2"/>
-            <text x="${x.toFixed(1)}" y="${(above ? y + 16 : y - 9).toFixed(1)}" text-anchor="middle" font-size="10" fill="#c8102e" font-weight="700">${d.taux.toFixed(2)}%</text>
-            <text x="${x.toFixed(1)}" y="${(padT + cH + 22).toFixed(1)}" text-anchor="middle" font-size="11" fill="#334155">${d.label}</text>`;
-  }).join('');
-
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;">
-    ${yTickHtml}
-    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + cH}" stroke="#cbd5e1"/>
-    <line x1="${padL}" y1="${padT + cH}" x2="${W - padR}" y2="${padT + cH}" stroke="#cbd5e1"/>
-    ${pts ? `<polyline points="${pts}" fill="none" stroke="#c8102e" stroke-width="2.5" stroke-linejoin="round"/>` : ''}
-    ${dots}
-  </svg>`;
-}
-
 function renderEvolutionMensuelle(type, vols, controles) {
   const isMP = type === 'MP';
   const container = document.getElementById(isMP ? 'mpEvolution' : 'gpEvolution');
@@ -3243,39 +3233,35 @@ function renderEvolutionMensuelle(type, vols, controles) {
     return;
   }
 
-  // Map vol_id → YYYY-MM
-  const volToMonth = {};
-  vols.forEach(v => { if (v.date_vol) volToMonth[v.id] = v.date_vol.slice(0, 7); });
+  // Map vol_id → YYYY-MM-DD (regroupement par jour, comme le tableau de bord)
+  const volToDay = {};
+  vols.forEach(v => { if (v.date_vol) volToDay[v.id] = v.date_vol; });
 
-  // Aggregate by month
-  const byMonth = {};
+  // Aggregate by day
+  const byDay = {};
   controles.forEach(c => {
-    const m = volToMonth[c.vol_id];
-    if (!m) return;
-    if (!byMonth[m]) byMonth[m] = { vols: new Set(), C: 0, NC: 0 };
-    byMonth[m].vols.add(c.vol_id);
-    if (c.conformite === 'C') byMonth[m].C++;
-    else if (c.conformite === 'NC') byMonth[m].NC++;
+    const d = volToDay[c.vol_id];
+    if (!d) return;
+    if (!byDay[d]) byDay[d] = { vols: new Set(), C: 0, NC: 0 };
+    byDay[d].vols.add(c.vol_id);
+    if (c.conformite === 'C') byDay[d].C++;
+    else if (c.conformite === 'NC') byDay[d].NC++;
   });
 
-  const todayM = new Date().toISOString().slice(0, 7);
-  const data = Object.keys(byMonth).sort().map(m => {
-    const d = byMonth[m];
+  const data = Object.keys(byDay).sort().map(day => {
+    const d = byDay[day];
     const total = d.C + d.NC;
-    const mon = parseInt(m.split('-')[1]) - 1;
-    const year = m.split('-')[0];
-    const partial = m === todayM;
+    const [, mm, dd] = day.split('-');
     return {
-      month: m, year,
-      label: MONTH_LABELS[mon] + (partial ? '*' : ''),
+      day,
+      label: dd + '/' + mm,
       insp: d.vols.size,
-      taux: total > 0 ? d.C / total * 100 : null,
-      partial
+      taux: total > 0 ? d.C / total * 100 : null
     };
   });
 
   if (!data.length) {
-    container.innerHTML = '<div class="empty-state">Aucune donnée mensuelle.</div>';
+    container.innerHTML = '<div class="empty-state">Aucune donnée quotidienne.</div>';
     return;
   }
 
@@ -3283,7 +3269,7 @@ function renderEvolutionMensuelle(type, vols, controles) {
   const firstT = data.find(d => d.taux !== null)?.taux;
   const lastT  = [...data].reverse().find(d => d.taux !== null)?.taux;
   const maxInsp = Math.max(...data.map(d => d.insp));
-  const peakM   = data.find(d => d.insp === maxInsp);
+  const peakD   = data.find(d => d.insp === maxInsp);
 
   const inspUp  = data.length > 1 && data[data.length - 1].insp >= data[0].insp;
   const tauxDown = firstT !== null && lastT !== null && lastT < firstT;
@@ -3294,8 +3280,8 @@ function renderEvolutionMensuelle(type, vols, controles) {
       <strong>Activité ${inspUp ? 'en hausse' : 'en baisse'}</strong>
     </div>
     <p class="evol-card-text">Le volume de contrôles ${inspUp
-      ? `a progressé jusqu'à ${peakM?.label?.replace('*','')} (pic à ${maxInsp.toLocaleString('fr-FR')}), traduisant une montée en charge du dispositif.`
-      : `a diminué sur la période. À ${data[data.length-1].label?.replace('*','')} : ${data[data.length-1].insp.toLocaleString('fr-FR')} inspections.`}</p>
+      ? `a progressé jusqu'au ${peakD?.label} (pic à ${maxInsp.toLocaleString('fr-FR')}), traduisant une montée en charge du dispositif.`
+      : `a diminué sur la période. Au ${data[data.length-1].label} : ${data[data.length-1].insp.toLocaleString('fr-FR')} inspections.`}</p>
   </div>`;
 
   const vigilCard = firstT !== null && lastT !== null ? `<div class="evol-card ${tauxDown ? 'evol-card-vigil' : 'evol-card-ok'}">
@@ -3308,26 +3294,20 @@ function renderEvolutionMensuelle(type, vols, controles) {
       : `Le taux de conformité est resté stable ou en progression (${firstT.toFixed(2)} % → ${lastT.toFixed(2)} %).`}</p>
   </div>` : '';
 
-  const partial = data.find(d => d.partial);
-  const partialNote = partial ? `<div class="evol-note">
-    <strong style="color:#c8102e;">* ${MONTH_LABELS[parseInt(partial.month.split('-')[1])-1]} ${partial.year}</strong><br>
-    Mois partiel — données arrêtées au ${new Date().getDate()} ${MONTH_LABELS[parseInt(partial.month.split('-')[1])-1].replace('.','').toLowerCase()} (${partial.insp.toLocaleString('fr-FR')} inspections). À interpréter avec prudence.
-  </div>` : '';
-
+  const chartId = isMP ? 'mpEvolutionChart' : 'gpEvolutionChart';
   container.innerHTML = `
     <div class="evol-wrap">
       <div class="evol-left">
-        <div class="evol-chart-label"><em>Inspections réalisées par mois</em></div>
-        ${buildEvolBarSVG(data)}
-        <div class="evol-chart-label" style="margin-top:1.25rem;"><em>Taux de conformité par mois (%)</em></div>
-        ${buildEvolLineSVG(data)}
+        <div class="evol-chart-label"><em>Inspections réalisées &amp; taux de conformité par jour</em></div>
+        <div id="${chartId}" class="evol-chart-host"></div>
       </div>
       <div class="evol-right">
         ${actCard}
         ${vigilCard}
-        ${partialNote}
       </div>
     </div>`;
+
+  _buildEvolutionChart(document.getElementById(chartId), data);
 }
 
 // ---- Activité des contrôleurs (section 08) ----
@@ -3751,8 +3731,8 @@ function renderPartieClient(type, vols, controles) {
       <div class="rapport-perf-card perf-dark" style="background:${scoreBadge.bg};border-left:4px solid ${scoreBadge.color};">
         <i class="fas fa-star perf-icon" style="color:${scoreBadge.color};"></i>
         <div class="perf-value" style="color:${scoreBadge.color};">${scoreBadge.label}</div>
-        <div class="perf-label">Score expérience client</div>
-        <div class="perf-sub">${NC.toLocaleString('fr-FR')} NC client relevée${NC > 1 ? 's' : ''}</div>
+        <div class="perf-label" style="color:${scoreBadge.color};">Score expérience client</div>
+        <div class="perf-sub" style="color:${scoreBadge.color};opacity:.85;">${NC.toLocaleString('fr-FR')} NC client relevée${NC > 1 ? 's' : ''}</div>
       </div>
     </div>
 
